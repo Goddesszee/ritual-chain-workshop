@@ -285,6 +285,7 @@
 
 <script>
 const CONTRACT_ADDRESS = "0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b";
+const RITUAL_WALLET = "0x532F0dF0896F353d8C3DD8cc134e8129DA2a3948";
 const ABI = [
   "function nextBountyId() view returns (uint256)",
   "function getBounty(uint256) view returns (tuple(address owner, string title, string rubric, uint256 reward, uint256 submissionDeadline, uint256 revealDeadline, bool judged, bool finalized, uint256 submissionCount, uint256 winnerIndex, bytes aiReview))",
@@ -294,9 +295,12 @@ const ABI = [
   "function computeCommitment(string, bytes32, address, uint256) view returns (bytes32)",
   "function judgeAll(uint256, bytes)",
   "function finalizeWinner(uint256, uint256)",
+  // RitualWallet
+  "function deposit(uint256 lockDuration) external payable",
+  "function balanceOf(address) view returns (uint256)",
 ];
 
-let provider, signer, contract, userAddress;
+let provider, signer, contract, ritualWallet, userAddress;
 
 async function connectWallet() {
   if (!window.ethereum) { alert("Install MetaMask!"); return; }
@@ -315,7 +319,18 @@ async function connectWallet() {
     signer = await provider.getSigner();
     userAddress = await signer.getAddress();
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    ritualWallet = new ethers.Contract(RITUAL_WALLET, ABI, signer);
     document.getElementById("walletSection").innerHTML = `<div id="walletInfo">✓ ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
+    // Show RitualWallet balance
+    const rwBal = await ritualWallet.balanceOf(userAddress);
+    const balEth = ethers.formatEther(rwBal);
+    if (parseFloat(balEth) === 0) {
+      const notice = document.createElement("div");
+      notice.style = "position:fixed;bottom:20px;right:20px;background:#13131a;border:1px solid rgba(245,158,11,0.4);color:#f59e0b;padding:12px 16px;border-radius:10px;font-size:12px;z-index:999;max-width:280px";
+      notice.innerHTML = `⚠️ RitualWallet balance: 0 CRAT<br><small>Fund it to enable AI judging</small><br><button onclick="depositRitualWallet();this.parentElement.remove()" style="margin-top:8px;background:#f59e0b;color:#000;border:none;padding:6px 12px;border-radius:6px;font-weight:700;cursor:pointer;width:100%">Deposit 0.1 CRAT</button>`;
+      document.body.appendChild(notice);
+      setTimeout(() => notice.remove(), 10000);
+    }
     loadBounties();
   } catch(e) { console.error(e); }
 }
@@ -382,7 +397,10 @@ async function showBountyDetail(id, b, status, badgeClass) {
   } else if (!b.judged && !b.finalized && now >= subDL && now < revDL) {
     actions = `<div class="status status-warning">🔓 Reveal phase open — go to Participate tab to reveal!</div>`;
   } else if (!b.judged && !b.finalized && now >= revDL && isOwner) {
-    actions = `<button class="btn btn-amber" onclick="judgeAll(${id})">🤖 Judge All (Owner Only)</button>`;
+    actions = `
+      <button class="btn btn-amber" onclick="judgeAll(${id}, {title:'${b.title.replace(/'/g,"\\'")}', rubric:'${b.rubric.replace(/'/g,"\\'")}'})" style="margin-bottom:8px">🤖 Judge All (Owner Only)</button>
+      <button class="btn btn-outline" onclick="depositRitualWallet()" style="margin-top:4px;font-size:12px">+ Fund RitualWallet</button>
+    `;
   } else if (b.judged && !b.finalized && isOwner) {
     actions = `<label>Winner Index</label><input id="winnerIdx" type="number" min="0" placeholder="0"/><button class="btn btn-green" onclick="finalizeWinner(${id})">🏆 Finalize Winner</button>`;
   } else if (b.finalized) {
@@ -447,8 +465,72 @@ async function revealAnswer() {
   } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
 }
 
-async function judgeAll(bountyId) {
-  alert("judgeAll requires a Ritual LLM payload — please use the full frontend or call directly via the contract.");
+async function judgeAll(bountyId, bountyData) {
+  if (!contract) { alert("Connect wallet first!"); return; }
+
+  // Check RitualWallet balance
+  const balance = await ritualWallet.balanceOf(userAddress);
+  if (balance === 0n) {
+    const deposit = confirm("Your RitualWallet balance is 0. You need to deposit CRAT to pay for LLM compute.\n\nDeposit 0.1 CRAT now?");
+    if (deposit) await depositRitualWallet();
+    return;
+  }
+
+  // Build the LLM batch prompt from revealed answers
+  const st = document.getElementById("dActions");
+  st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Loading revealed answers...</div>';
+
+  try {
+    const [submitters, answers] = await contract.getRevealedAnswers(bountyId);
+    if (submitters.length === 0) {
+      st.innerHTML = '<div class="status status-error">No revealed answers yet. Participants must reveal first.</div>';
+      return;
+    }
+
+    // Build batch prompt
+    const submissions = submitters.map((s, i) => `[${i}] ${s.slice(0,6)}...: ${answers[i]}`).join("\n\n");
+    const prompt = `You are an impartial bounty judge.\n\nBounty: ${bountyData.title}\nRubric: ${bountyData.rubric}\n\nSubmissions:\n${submissions}\n\nReturn JSON only: {"winnerIndex": number, "ranking": [{"index": number, "score": number, "reason": string}], "summary": string}`;
+
+    // Encode as Ritual LLM input
+    const messages = JSON.stringify([
+      { role: "system", content: "You are an impartial bounty judge. Return only valid JSON, no markdown." },
+      { role: "user", content: prompt }
+    ]);
+
+    // ABI encode the LLM request (matches Ritual precompile format)
+    const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+    const llmInput = abiCoder.encode(
+      ["address","bytes[]","uint256","bytes[]","bytes","string","string","int256","string","bool","int256","string","string","uint256","bool","int256","string","bytes","int256","string","string","bool","int256","bytes","bytes","int256","int256","string","bool","tuple(string,string,string)"],
+      [
+        "0x0000000000000000000000000000000000000000", // executor
+        [], 0n, [], "0x", messages,
+        "zai-org/GLM-4.7-FP8", 0n, "", false, 8192n,
+        "", "", 1n, false, 0n, "low", "0x", -1n,
+        "", "", false, 100n, "0x", "0x", -1n, 1000n, "", false,
+        ["", "", ""]
+      ]
+    );
+
+    st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting to Ritual LLM...</div>';
+    const tx = await contract.judgeAll(bountyId, llmInput);
+    st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for Ritual TEE response...</div>';
+    const receipt = await tx.wait();
+    st.innerHTML = `<div class="status status-success">✅ Judging complete! Tx: ${receipt.hash.slice(0,10)}... — Refresh to see AI verdict.</div>`;
+    loadBounties();
+  } catch(e) {
+    st.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`;
+  }
+}
+
+async function depositRitualWallet() {
+  if (!ritualWallet) { alert("Connect wallet first!"); return; }
+  try {
+    const tx = await ritualWallet.deposit(0, { value: ethers.parseEther("0.1") });
+    await tx.wait();
+    alert("✅ Deposited 0.1 CRAT into RitualWallet! Now try judgeAll again.");
+  } catch(e) {
+    alert("Error: " + (e.reason || e.message));
+  }
 }
 
 async function finalizeWinner(bountyId) {
