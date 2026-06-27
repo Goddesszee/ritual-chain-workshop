@@ -315,7 +315,10 @@ async function connectWallet() {
         nativeCurrency: { name: "CRAT", symbol: "CRAT", decimals: 18 }
       }] });
     }
-    provider = new ethers.BrowserProvider(window.ethereum);
+    provider = new ethers.BrowserProvider(window.ethereum, {
+      chainId: 0x7BB,
+      name: "ritual"
+    });
     signer = await provider.getSigner();
     userAddress = await signer.getAddress();
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
