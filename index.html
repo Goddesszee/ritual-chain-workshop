@@ -417,20 +417,17 @@ async function createBounty() {
   if (!contract) { alert("Connect wallet first!"); return; }
   const title = document.getElementById("cTitle").value.trim();
   const rubric = document.getElementById("cRubric").value.trim();
-  const subDLRaw = document.getElementById("cSubDL").value; // "YYYY-MM-DDTHH:mm"
-  const revDLRaw = document.getElementById("cRevDL").value;
-  const subDL = Math.floor(new Date(subDLRaw).getTime() / 1000);
-  const revDL = Math.floor(new Date(revDLRaw).getTime() / 1000);
   const reward = document.getElementById("cReward").value;
-  const nowSec = Math.floor(Date.now() / 1000);
-  console.log("now:", nowSec, "subDL:", subDL, "revDL:", revDL);
-  if (!title || !rubric || !subDL || !revDL || !reward) { alert("Fill all fields!"); return; }
-  if (subDL <= nowSec) { alert("Commit deadline must be in the future! nowUTC=" + new Date().toUTCString()); return; }
-  if (revDL <= subDL) { alert("Reveal deadline must be after commit deadline!"); return; }
+  if (!title || !rubric || !reward) { alert("Fill all fields!"); return; }
+  // Ritual Chain block.timestamp is in milliseconds
+  const block = await provider.getBlock("latest");
+  const blockTs = block.timestamp;
+  const subDL = BigInt(blockTs + 2 * 60 * 60 * 1000);  // +2 hours
+  const revDL = BigInt(blockTs + 4 * 60 * 60 * 1000);  // +4 hours
   const status = document.getElementById("createStatus");
   status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating bounty...</div>';
   try {
-    const tx = await contract.createBounty(title, rubric, subDL, revDL, { value: ethers.parseEther(reward) });
+    const tx = await contract.createBounty(title, rubric, subDL, revDL, { value: ethers.parseEther(reward.trim()) });
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
     const receipt = await tx.wait();
     status.innerHTML = `<div class="status status-success">✅ Bounty created! Tx: ${receipt.hash.slice(0,10)}...</div>`;
