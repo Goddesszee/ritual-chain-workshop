@@ -42,7 +42,6 @@ export function BountyView({ bountyId }: { bountyId: bigint }) {
     );
   }
 
-  // An owner of address(0) means the bounty doesn't exist yet.
   if (/^0x0+$/.test(bounty.owner)) {
     return (
       <Notice tone="amber">
@@ -83,11 +82,10 @@ export function BountyView({ bountyId }: { bountyId: bigint }) {
         {bounty.judged && <AIReviewDisplay aiReview={bounty.aiReview} />}
         <SubmissionsList
           bountyId={bountyId}
+          bounty={bounty}
           count={Number(bounty.submissionCount)}
           judge={judge}
-          finalWinner={
-            bounty.finalized ? Number(bounty.winnerIndex) : undefined
-          }
+          finalWinner={bounty.finalized ? Number(bounty.winnerIndex) : undefined}
         />
       </div>
     </div>

@@ -45,26 +45,37 @@ export function BountyDetail({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           <Stat label="Reward" value={formatReward(bounty.reward)} />
-          <Stat label="Submissions" value={bounty.submissionCount.toString()} />
+          <Stat label="Commitments" value={bounty.submissionCount.toString()} />
+          <Stat label="Owner" value={shortenAddress(bounty.owner)} />
           <Stat
-            label="Deadline"
+            label="Commit deadline"
             value={
               <span>
-                {formatTimestamp(bounty.deadline)}
+                {formatTimestamp(bounty.submissionDeadline)}
                 <span className="ml-1 text-xs text-zinc-500">
-                  ({formatRelative(bounty.deadline)})
+                  ({formatRelative(bounty.submissionDeadline)})
                 </span>
               </span>
             }
           />
-          <Stat label="Owner" value={shortenAddress(bounty.owner)} />
+          <Stat
+            label="Reveal deadline"
+            value={
+              <span>
+                {formatTimestamp(bounty.revealDeadline)}
+                <span className="ml-1 text-xs text-zinc-500">
+                  ({formatRelative(bounty.revealDeadline)})
+                </span>
+              </span>
+            }
+          />
         </div>
 
         {bounty.finalized && (
           <div className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 ring-1 ring-inset ring-emerald-500/30">
-            Finalized, winner is submission{" "}
+            Finalized — winner is submission{" "}
             <span className="font-mono font-semibold">#{bounty.winnerIndex.toString()}</span>.
           </div>
         )}
