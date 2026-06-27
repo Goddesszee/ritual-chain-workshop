@@ -1,76 +1,121 @@
 # Privacy-Preserving AI Bounty Judge
-### Assignment submission — web3aunty / Goddesszee
+### Ritual Chain Workshop — Submission by web3aunty / Goddesszee
 
-## Overview
+**Contract:** `0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b`
+**Network:** Ritual Chain (Chain ID 1979)
+**Deploy tx:** `0xa14abb7b25b12549202d928f10efce48bd9a6a6c7705f4d26aeff2a3b0b1a04f`
+**Explorer:** https://explorer.ritualfoundation.org/tx/0xa14abb7b25b12549202d928f10efce48bd9a6a6c7705f4d26aeff2a3b0b1a04f
 
-This fork adds a **commit-reveal privacy layer** to the Ritual AI Bounty Judge.
-Participants can no longer see each other's answers during the submission phase,
-eliminating copy-cat submissions.
+---
+
+## What Was Built
+
+An upgraded AI Bounty Judge that prevents answer-copying during the submission phase.
+The original workshop version stored answers in plaintext immediately — this version
+uses a **commit-reveal scheme** so answers stay hidden until all commitments are locked.
 
 ---
 
 ## Bounty Lifecycle
 
 ```
-createBounty()                     ← owner funds prize + sets two deadlines
-     │
-     ▼  [Commit phase]
-submitCommitment(bountyId, hash)   ← participants submit keccak256 hash only
-     │
-     │  ← submissionDeadline passes ──────────────────────────────────┐
-     ▼  [Reveal phase]                                                 │ no answer
-revealAnswer(bountyId, answer, salt) ← participants reveal plaintext    │ visible
-     │                                 contract verifies hash matches   │ on-chain
-     │  ← revealDeadline passes ─────────────────────────────────────┘
-     ▼  [Judge phase]
-judgeAll(bountyId, llmInput)       ← owner triggers SINGLE batch Ritual LLM call
-     │                                covering ALL revealed answers
-     ▼  [Finalize]
-finalizeWinner(bountyId, index)    ← owner records AI verdict, transfers prize
+┌─────────────────────────────────────────────────────────────────────┐
+│                     PHASE 1: COMMIT                                  │
+│                  (before submissionDeadline)                         │
+│                                                                      │
+│  Participant computes:                                               │
+│  commitment = keccak256(answer + salt + address + bountyId)          │
+│                                                                      │
+│  Calls: submitCommitment(bountyId, commitment)                       │
+│                                                                      │
+│  ✅ Only the HASH is stored on-chain                                 │
+│  ❌ Answer is completely hidden                                       │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │ submissionDeadline passes
+                          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     PHASE 2: REVEAL                                  │
+│              (after submissionDeadline, before revealDeadline)       │
+│                                                                      │
+│  Calls: revealAnswer(bountyId, answer, salt)                         │
+│                                                                      │
+│  Contract verifies:                                                  │
+│  keccak256(answer, salt, msg.sender, bountyId) == stored commitment  │
+│                                                                      │
+│  ✅ Answer proven unchanged since commit                             │
+│  ✅ Cannot change answer after seeing others' submissions            │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │ revealDeadline passes
+                          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                     PHASE 3: JUDGE                                   │
+│                    (after revealDeadline)                            │
+│                                                                      │
+│  Owner fetches revealed answers via getRevealedAnswers()             │
+│  Builds ONE batch payload with ALL answers                           │
+│  Calls: judgeAll(bountyId, llmInput)                                 │
+│                                                                      │
+│  → Single Ritual LLM precompile call (0x0802)                       │
+│  → LLM ranks all submissions against the rubric                      │
+│  → AI verdict stored in aiReview on-chain                           │
+└─────────────────────────┬───────────────────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    PHASE 4: FINALIZE                                 │
+│                                                                      │
+│  Owner reviews AI verdict                                            │
+│  Calls: finalizeWinner(bountyId, winnerIndex)                        │
+│                                                                      │
+│  → Winner receives full reward via .call{value}                    │
+│  → Human-in-the-loop: AI recommends, human decides                  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Commitment Hash Formula
+## Commitment Formula Explained
 
+```solidity
+bytes32 commitment = keccak256(
+    abi.encodePacked(answer, salt, msg.sender, bountyId)
+);
 ```
-commitment = keccak256(abi.encodePacked(answer, salt, msg.sender, bountyId))
-```
 
-- **answer** — your plaintext submission string
-- **salt** — a random `bytes32` you generate client-side (`crypto.getRandomValues`)
-- **msg.sender** — binds the commitment to your address (prevents replay)
-- **bountyId** — binds to this specific bounty (prevents cross-bounty reuse)
-
-The contract's `computeCommitment()` view function lets you verify the hash off-chain.
+| Component | Why it is included |
+|---|---|
+| `answer` | The actual submission being hidden |
+| `salt` | Random bytes32 — prevents brute-force guessing of short answers |
+| `msg.sender` | Prevents commitment replay — you cannot submit someone else's hash |
+| `bountyId` | Prevents cross-bounty replay — commitment is tied to one specific bounty |
 
 ---
 
 ## What Changed from the Base Contract
 
-| Area | Before | After |
+| Area | Before (workshop) | After (this submission) |
 |---|---|---|
-| Submission | `submitAnswer()` stores plaintext on-chain | `submitCommitment()` stores only a hash |
-| Reveal | n/a | `revealAnswer()` verifies hash + stores plaintext |
+| Submission | `submitAnswer()` stores plaintext | `submitCommitment()` stores only a hash |
+| Reveal | n/a | `revealAnswer()` verifies hash then stores plaintext |
 | `createBounty` | single `deadline` | `submissionDeadline` + `revealDeadline` |
-| `getBounty` | returns old tuple | extended tuple with both deadlines |
-| ABI | original | updated to match new contract |
-| Frontend | single submit form | commit form → reveal form (phase-aware) |
-| Submissions list | shows all answers live | shows 🔒 hidden until after judging |
+| Submissions list | shows answers live | shows 🔒 hidden until after judging |
+| Frontend | single submit form | phase-aware: commit → reveal → judged |
 
 ---
 
 ## Test Plan
 
 ### Happy path
-1. Deploy → `createBounty(title, rubric, subDeadline, revDeadline)` with ETH
-2. Call `computeCommitment(answer, salt, addr, bountyId)` → get `commitment`
-3. `submitCommitment(bountyId, commitment)` ← before subDeadline
-4. Warp time past `submissionDeadline`
-5. `revealAnswer(bountyId, answer, salt)` → tx succeeds
-6. Warp time past `revealDeadline`
-7. `judgeAll(bountyId, llmInput)` → Ritual LLM called
-8. `finalizeWinner(bountyId, 0)` → winner receives ETH
+```
+1. createBounty(title, rubric, subDeadline, revDeadline)  -- with ETH
+2. computeCommitment(answer, salt, addr, bountyId)         -- get hash
+3. submitCommitment(bountyId, hash)                        -- before subDeadline
+4. [time passes submissionDeadline]
+5. revealAnswer(bountyId, answer, salt)                    -- tx succeeds
+6. [time passes revealDeadline]
+7. judgeAll(bountyId, llmInput)                            -- Ritual LLM called
+8. finalizeWinner(bountyId, 0)                             -- winner paid
+```
 
 ### Failure cases
 | Test | Expected revert |
@@ -79,47 +124,87 @@ The contract's `computeCommitment()` view function lets you verify the hash off-
 | `revealAnswer` before deadline | "submission phase still open" |
 | `revealAnswer` with wrong salt | "commitment mismatch" |
 | `revealAnswer` with wrong answer | "commitment mismatch" |
-| `revealAnswer` from different address | "commitment mismatch" (address bound) |
+| `revealAnswer` from different address | "commitment mismatch" |
 | `revealAnswer` twice | "already revealed" |
 | `submitCommitment` twice | "already committed" |
 | `judgeAll` before revealDeadline | "reveal phase still open" |
-| `finalizeWinner` on unrevealed submission | "winner has not revealed" |
+| `judgeAll` with no reveals | "no revealed answers" |
+| `finalizeWinner` on unrevealed submission | "invalid or unrevealed winner" |
 
 ---
 
-## Architecture Note — Advanced Track (Ritual-Native)
+## Architecture Note: Commit-Reveal vs Ritual-Native TEE
 
-### Where does plaintext exist?
+### Commit-Reveal (Required Track — implemented)
 
-| Layer | What's stored | Plaintext visible? |
-|---|---|---|
-| On-chain (commit phase) | `commitment` hash only | ❌ No |
-| On-chain (after reveal) | plaintext `answer` | ✅ Yes — but only after all commitments locked |
-| Off-chain (client) | answer + salt in browser memory | ✅ Yes — only to the user |
-| Ritual TEE (judgeAll) | batch payload inside TEE | ✅ Yes — but isolated in hardware enclave |
+```
+Participant          Chain                    Everyone
+    │                  │                         │
+    │──commit hash────►│                         │
+    │                  │◄── hash stored          │
+    │                  │    answer HIDDEN ───────►│ (cannot read)
+    │                  │                         │
+    │──reveal answer──►│                         │
+    │                  │ verify hash ✓           │
+    │                  │ store answer            │
+    │                  │──── answer visible ────►│ (reveal phase)
+    │                  │                         │
+    │         judgeAll(batch LLM call)           │
+    │                  │                         │
+```
 
-### How does the LLM receive submissions for batch judging?
+**Limitation:** Answers become public BEFORE AI judging. A very fast actor
+could theoretically read revealed answers and try to influence the judging result.
 
-1. After `revealDeadline`, the owner calls `getRevealedAnswers(bountyId)` — a view function returning parallel arrays of `(submitters[], answers[])`.
-2. The owner encodes all answers into a single `llmInput` bytes payload (JSON: `{question, rubric, submissions:[{index, answer}…]}`).
-3. `judgeAll()` makes **one** call to Ritual's `LLM_INFERENCE_PRECOMPILE` with the entire batch — no per-answer LLM calls.
-4. The LLM returns a structured verdict (`winnerIndex`, per-answer `score` + `reason`) encoded in `aiReview`.
+### Ritual-Native TEE (Advanced Track — design)
 
-### With full Ritual TEE-backed hidden submissions (Advanced Track concept)
+```
+Participant          Chain              Ritual TEE Executor
+    │                  │                      │
+    │─encrypt(answer)─►│                      │
+    │                  │◄─ ciphertext stored  │
+    │                  │   plaintext NEVER    │
+    │                  │   on public chain    │
+    │                  │                      │
+    │         judgeAll triggers TEE           │
+    │                  │──────────────────────►│
+    │                  │              decrypt inside enclave
+    │                  │              LLM judges privately
+    │                  │◄─────────────────────│ signed verdict
+    │                  │                      │
+    │         finalizeWinner                  │
+    │                  │                      │
+```
 
-In a fully private system, answers would be encrypted to the TEE's public key client-side and stored encrypted on-chain or in decentralised storage. The TEE would decrypt and judge inside the enclave, with the `TEEServiceRegistry` attesting to the executor's identity. Plaintext answers would exist **only inside the TEE enclave** — never on the public chain until after judging. This repo implements the commit-reveal approach (Required Track), which achieves the same fairness guarantee without requiring TEE encryption infrastructure.
+**Advantage:** Answers stay encrypted until AFTER judging. Even the bounty
+owner cannot read submissions before the verdict. Requires Ritual TEE
+executor + DKMS precompile (0x081B) for key management.
+
+**What is stored on-chain:** Encrypted ciphertext only.
+**What is stored off-chain:** Nothing — TEE decrypts in-enclave at judge time.
+**How LLM receives submissions:** TEE decrypts all answers inside the enclave,
+builds one batch prompt, calls the LLM in a single request, returns signed verdict.
 
 ---
 
-## Reflection Question
+## Reflection
 
-> *What should be public, what should stay hidden, and what should be decided by AI versus by a human in a bounty system?*
+What should be public, what should stay hidden, and what should be decided
+by AI versus by a human in a bounty system?
 
-The bounty question, rubric, prize amount, and submission deadline should all be public so participants can make informed decisions about whether to enter. Individual answers must remain hidden until all commitments are locked — the commit-reveal scheme enforces this without trusting any central authority. Once the reveal phase closes, answers can safely become public because no one can retroactively copy and improve a submission they haven't seen. The existence of a commitment (but not its content) can be public, letting participants verify that the field is competitive. AI is well-suited to scoring answers consistently against a rubric, catching plagiarism across the submission set, and doing so in a single auditable batch call — tasks where human judges introduce bias or fatigue. However, a human should retain the right to flag disqualifications, override clear AI errors, and make the final `finalizeWinner` call on-chain. This hybrid model keeps the process transparent: the AI verdict is recorded in `aiReview` for anyone to inspect, while the human owner takes accountable, gas-signed responsibility for the final outcome.
-
----
-
-## Deployed contract
-
-> Update this after deploying to Ritual testnet:
-> `NEXT_PUBLIC_CONTRACT_ADDRESS=0x...` in `web/.env.local`
+The bounty question, rubric, prize amount, and submission deadline should all
+be public so participants can make informed decisions about whether to enter.
+Individual answers must remain hidden until all commitments are locked — the
+commit-reveal scheme enforces this without trusting any central authority.
+Once the reveal phase closes, answers can safely become public because no one
+can retroactively copy and improve a submission they have not seen. The
+existence of a commitment (but not its content) can be public, letting
+participants verify that the field is competitive. AI is well-suited to
+scoring answers consistently against a rubric, catching patterns across the
+submission set, and doing so in a single auditable batch call — tasks where
+human judges introduce bias or fatigue. However, a human should retain the
+right to flag disqualifications, override clear AI errors, and make the final
+`finalizeWinner` call on-chain, taking accountable responsibility for the
+outcome. This hybrid model keeps the process transparent: the AI verdict is
+recorded in `aiReview` for anyone to inspect, while the human owner signs
+the final decision on-chain.
