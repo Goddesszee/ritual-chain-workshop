@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>NAN Bounty Judge — Privacy-Preserving AI Bounty System</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --card: #13131a;
+    --border: #2a2a3a;
+    --purple: #7c3aed;
+    --purple-light: #a78bfa;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
+
+  /* Header */
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(10px); }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 36px; height: 36px; background: var(--purple); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: white; }
+  .logo-text { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #a78bfa, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  #connectBtn { background: var(--purple); color: white; border: none; padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  #connectBtn:hover { background: #6d28d9; transform: translateY(-1px); }
+  #walletInfo { font-size: 13px; color: var(--purple-light); background: rgba(124,58,237,0.1); padding: 6px 14px; border-radius: 8px; border: 1px solid rgba(124,58,237,0.3); }
+
+  /* Layout */
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+  .hero { text-align: center; margin-bottom: 48px; }
+  .hero h1 { font-size: 42px; font-weight: 800; background: linear-gradient(135deg, #e2e8f0, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px; }
+  .hero p { color: var(--muted); font-size: 16px; max-width: 500px; margin: 0 auto 24px; }
+  .contract-badge { display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); padding: 8px 16px; border-radius: 100px; font-size: 12px; font-family: monospace; color: var(--muted); }
+  .contract-badge span { color: var(--green); }
+
+  /* Phase indicator */
+  .phases { display: flex; gap: 8px; margin-bottom: 32px; overflow-x: auto; padding-bottom: 4px; }
+  .phase { flex: 1; min-width: 120px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; transition: all 0.2s; }
+  .phase.active { border-color: var(--purple); background: rgba(124,58,237,0.1); }
+  .phase-num { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .phase-name { font-size: 13px; font-weight: 600; }
+  .phase.active .phase-name { color: var(--purple-light); }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media(max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+  /* Cards */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .card-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .card-title { font-size: 15px; font-weight: 700; }
+  .card-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .card-body { padding: 20px 24px; }
+
+  /* Form elements */
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; margin-top: 14px; }
+  label:first-child { margin-top: 0; }
+  input, textarea, select { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
+  input:focus, textarea:focus { border-color: var(--purple); }
+  textarea { resize: vertical; min-height: 80px; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Buttons */
+  .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 16px; }
+  .btn-primary { background: var(--purple); color: white; }
+  .btn-primary:hover { background: #6d28d9; transform: translateY(-1px); }
+  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
+  .btn-green { background: var(--green); color: white; }
+  .btn-green:hover { background: #059669; }
+  .btn-amber { background: var(--amber); color: #000; }
+
+  /* Badges */
+  .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .badge-purple { background: rgba(124,58,237,0.15); color: var(--purple-light); border: 1px solid rgba(124,58,237,0.3); }
+  .badge-amber { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+  /* Status messages */
+  .status { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
+  .status-success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: var(--green); }
+  .status-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+  .status-info { background: rgba(124,58,237,0.1); border: 1px solid rgba(124,58,237,0.3); color: var(--purple-light); }
+  .status-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--amber); }
+
+  /* Bounty list */
+  .bounty-item { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+  .bounty-item:hover { border-color: var(--purple); background: rgba(124,58,237,0.05); }
+  .bounty-item.selected { border-color: var(--purple); background: rgba(124,58,237,0.08); }
+  .bounty-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  .bounty-meta { display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+
+  /* Salt box */
+  .salt-box { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.3); border-radius: 10px; padding: 14px; margin-top: 12px; }
+  .salt-box-title { font-size: 12px; font-weight: 700; color: var(--amber); margin-bottom: 6px; }
+  .salt-value { font-family: monospace; font-size: 11px; color: var(--text); word-break: break-all; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; }
+
+  /* Full width span */
+  .full { grid-column: 1 / -1; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.04); padding: 4px; border-radius: 10px; margin-bottom: 20px; }
+  .tab { flex: 1; padding: 8px; border: none; background: none; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 7px; transition: all 0.2s; }
+  .tab.active { background: var(--purple); color: white; }
+
+  /* Loading spinner */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .mono { font-family: monospace; font-size: 12px; }
+  .stat { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .stat:last-child { border-bottom: none; }
+  .stat-label { font-size: 12px; color: var(--muted); }
+  .stat-value { font-size: 13px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">B</div>
+    <div>
+      <div class="logo-text">Bounty Judge</div>
+      <div class="logo-sub">Privacy-Preserving · Ritual Chain</div>
+    </div>
+  </div>
+  <div id="walletSection">
+    <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <h1>AI Bounty Judge</h1>
+    <p>Submit answers privately. Reveal after the deadline. Let Ritual AI judge fairly.</p>
+    <div class="contract-badge">
+      Contract: <span>0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b</span>
+    </div>
+  </div>
+
+  <div class="phases">
+    <div class="phase active" id="phase0"><div class="phase-num">Phase 0</div><div class="phase-name">🏆 Create</div></div>
+    <div class="phase" id="phase1"><div class="phase-num">Phase 1</div><div class="phase-name">🔒 Commit</div></div>
+    <div class="phase" id="phase2"><div class="phase-num">Phase 2</div><div class="phase-name">🔓 Reveal</div></div>
+    <div class="phase" id="phase3"><div class="phase-num">Phase 3</div><div class="phase-name">🤖 Judge</div></div>
+    <div class="phase" id="phase4"><div class="phase-num">Phase 4</div><div class="phase-name">🎉 Finalize</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('bounties')">Browse Bounties</button>
+    <button class="tab" onclick="showTab('create')">Create Bounty</button>
+    <button class="tab" onclick="showTab('participate')">Participate</button>
+  </div>
+
+  <!-- BROWSE TAB -->
+  <div id="tab-bounties">
+    <div class="grid">
+      <div class="card full">
+        <div class="card-header">
+          <div><div class="card-title">Active Bounties</div><div class="card-sub">Click a bounty to view details</div></div>
+          <button class="btn btn-primary" style="width:auto;margin:0;padding:8px 16px" onclick="loadBounties()">Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="bountyList"><p style="color:var(--muted);font-size:13px">Connect your wallet to load bounties.</p></div>
+        </div>
+      </div>
+
+      <div class="card full" id="bountyDetailCard" style="display:none">
+        <div class="card-header">
+          <div><div class="card-title" id="detailTitle">Bounty Details</div><div class="card-sub" id="detailSub"></div></div>
+          <span id="detailBadge" class="badge badge-green">Open</span>
+        </div>
+        <div class="card-body">
+          <div class="grid">
+            <div>
+              <div class="stat"><span class="stat-label">Reward</span><span class="stat-value" id="detailReward">-</span></div>
+              <div class="stat"><span class="stat-label">Commit Deadline</span><span class="stat-value" id="detailSubDL">-</span></div>
+              <div class="stat"><span class="stat-label">Reveal Deadline</span><span class="stat-value" id="detailRevDL">-</span></div>
+              <div class="stat"><span class="stat-label">Submissions</span><span class="stat-value" id="detailCount">-</span></div>
+            </div>
+            <div>
+              <label>Rubric</label>
+              <div id="detailRubric" style="font-size:13px;color:var(--muted);line-height:1.6"></div>
+            </div>
+          </div>
+          <div id="detailActions" style="margin-top:16px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE TAB -->
+  <div id="tab-create" style="display:none">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Create a Bounty</div><div class="card-sub">Fund a prize and set two deadlines</div></div></div>
+        <div class="card-body">
+          <label>Title</label>
+          <input id="cTitle" placeholder="Best smart contract optimization..."/>
+          <label>Rubric <span style="color:var(--muted);font-weight:400">(how AI will judge)</span></label>
+          <textarea id="cRubric" placeholder="Correctness 50%, gas efficiency 30%, clarity 20%..."></textarea>
+          <label>Commit Deadline</label>
+          <input id="cSubDL" type="datetime-local"/>
+          <label>Reveal Deadline</label>
+          <input id="cRevDL" type="datetime-local"/>
+          <label>Prize (RITUAL)</label>
+          <input id="cReward" type="number" min="0.001" step="0.001" placeholder="1.0"/>
+          <button class="btn btn-primary" onclick="createBounty()">🏆 Create Bounty</button>
+          <div id="createStatus"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">How It Works</div></div></div>
+        <div class="card-body">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">1</div>
+              <div><div style="font-weight:600;font-size:13px">Create & Fund</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Set your bounty question, rubric, and two deadlines. Prize locked in contract.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">2</div>
+              <div><div style="font-weight:600;font-size:13px">Participants Commit</div><div style="font-size:12px;color:var(--muted);margin-top:2px">They submit only a hash — answer stays completely hidden.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">3</div>
+              <div><div style="font-weight:600;font-size:13px">Reveal Phase</div><div style="font-size:12px;color:var(--muted);margin-top:2px">After commit deadline, participants reveal. Contract verifies the hash matches.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">4</div>
+              <div><div style="font-weight:600;font-size:13px">Ritual AI Judges</div><div style="font-size:12px;color:var(--muted);margin-top:2px">One batch LLM call judges all revealed answers against your rubric.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">5</div>
+              <div><div style="font-weight:600;font-size:13px">Winner Paid</div><div style="font-size:12px;color:var(--muted);margin-top:2px">You finalize the winner and they receive the full prize instantly.</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PARTICIPATE TAB -->
+  <div id="tab-participate" style="display:none">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">🔒 Submit Commitment</div><div class="card-sub">Your answer stays hidden until reveal phase</div></div></div>
+        <div class="card-body">
+          <label>Bounty ID</label>
+          <input id="pBountyId" type="number" placeholder="1" min="1"/>
+          <label>Your Answer</label>
+          <textarea id="pAnswer" placeholder="Write your answer here..."></textarea>
+          <div class="hint">Your answer will NOT be stored on-chain yet — only its hash.</div>
+          <button class="btn btn-primary" onclick="submitCommitment()">🔒 Submit Commitment</button>
+          <div id="commitStatus"></div>
+          <div id="saltBox" style="display:none" class="salt-box">
+            <div class="salt-box-title">⚠️ SAVE YOUR SALT — You need this to reveal!</div>
+            <div class="salt-value" id="saltValue"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">🔓 Reveal Answer</div><div class="card-sub">After commit deadline passes</div></div></div>
+        <div class="card-body">
+          <label>Bounty ID</label>
+          <input id="rBountyId" type="number" placeholder="1" min="1"/>
+          <label>Your Original Answer</label>
+          <textarea id="rAnswer" placeholder="Must match your committed answer exactly..."></textarea>
+          <label>Your Salt</label>
+          <input id="rSalt" placeholder="0x... (from when you committed)" class="mono"/>
+          <button class="btn btn-green" onclick="revealAnswer()">🔓 Reveal Answer</button>
+          <div id="revealStatus"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const CONTRACT_ADDRESS = "0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b";
+const ABI = [
+  "function nextBountyId() view returns (uint256)",
+  "function getBounty(uint256) view returns (tuple(address owner, string title, string rubric, uint256 reward, uint256 submissionDeadline, uint256 revealDeadline, bool judged, bool finalized, uint256 submissionCount, uint256 winnerIndex, bytes aiReview))",
+  "function createBounty(string, string, uint256, uint256) payable returns (uint256)",
+  "function submitCommitment(uint256, bytes32)",
+  "function revealAnswer(uint256, string, bytes32)",
+  "function computeCommitment(string, bytes32, address, uint256) view returns (bytes32)",
+  "function judgeAll(uint256, bytes)",
+  "function finalizeWinner(uint256, uint256)",
+];
+
+let provider, signer, contract, userAddress;
+
+async function connectWallet() {
+  if (!window.ethereum) { alert("Install MetaMask!"); return; }
+  try {
+    await window.ethereum.request({ method: "eth_requestAccounts" });
+    try {
+      await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x7BB" }] });
+    } catch(e) {
+      await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{
+        chainId: "0x7BB", chainName: "Ritual Chain",
+        rpcUrls: ["https://rpc.ritualfoundation.org"],
+        nativeCurrency: { name: "CRAT", symbol: "CRAT", decimals: 18 }
+      }] });
+    }
+    provider = new ethers.BrowserProvider(window.ethereum);
+    signer = await provider.getSigner();
+    userAddress = await signer.getAddress();
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    document.getElementById("walletSection").innerHTML = `<div id="walletInfo">✓ ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
+    loadBounties();
+  } catch(e) { console.error(e); }
+}
+
+async function loadBounties() {
+  if (!contract) { return; }
+  const list = document.getElementById("bountyList");
+  list.innerHTML = '<p style="color:var(--muted);font-size:13px"><span class="spinner"></span>Loading...</p>';
+  try {
+    const nextId = await contract.nextBountyId();
+    if (nextId == 1n) { list.innerHTML = '<p style="color:var(--muted);font-size:13px">No bounties yet. Create one!</p>'; return; }
+    list.innerHTML = "";
+    for (let i = 1; i < nextId; i++) {
+      const b = await contract.getBounty(i);
+      const now = Date.now() / 1000;
+      const subDL = Number(b.submissionDeadline);
+      const revDL = Number(b.revealDeadline);
+      let status = "🟢 Commit Phase";
+      let badgeClass = "badge-green";
+      if (b.finalized) { status = "✅ Finalized"; badgeClass = "badge-purple"; }
+      else if (b.judged) { status = "🤖 Judged"; badgeClass = "badge-purple"; }
+      else if (now > revDL) { status = "⏳ Ready to Judge"; badgeClass = "badge-amber"; }
+      else if (now > subDL) { status = "🔓 Reveal Phase"; badgeClass = "badge-amber"; }
+      const reward = ethers.formatEther(b.reward);
+      const div = document.createElement("div");
+      div.className = "bounty-item";
+      div.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div class="bounty-title">#${i} ${b.title}</div>
+          <span class="badge ${badgeClass}">${status}</span>
+        </div>
+        <div class="bounty-meta">
+          <span>💰 ${reward} CRAT</span>
+          <span>📝 ${b.submissionCount} commits</span>
+          <span>📅 Commit: ${new Date(subDL*1000).toLocaleString()}</span>
+        </div>`;
+      div.onclick = () => showBountyDetail(i, b, status, badgeClass);
+      list.appendChild(div);
+    }
+  } catch(e) { list.innerHTML = `<p style="color:var(--red);font-size:13px">Error: ${e.message}</p>`; }
+}
+
+async function showBountyDetail(id, b, status, badgeClass) {
+  document.querySelectorAll(".bounty-item").forEach(el => el.classList.remove("selected"));
+  event.currentTarget.classList.add("selected");
+  document.getElementById("bountyDetailCard").style.display = "block";
+  document.getElementById("detailTitle").textContent = `#${id} ${b.title}`;
+  document.getElementById("detailSub").textContent = `Owner: ${b.owner.slice(0,6)}...${b.owner.slice(-4)}`;
+  document.getElementById("detailBadge").className = `badge ${badgeClass}`;
+  document.getElementById("detailBadge").textContent = status;
+  document.getElementById("detailReward").textContent = ethers.formatEther(b.reward) + " CRAT";
+  document.getElementById("detailSubDL").textContent = new Date(Number(b.submissionDeadline)*1000).toLocaleString();
+  document.getElementById("detailRevDL").textContent = new Date(Number(b.revealDeadline)*1000).toLocaleString();
+  document.getElementById("detailCount").textContent = b.submissionCount.toString();
+  document.getElementById("detailRubric").textContent = b.rubric;
+
+  const now = Date.now() / 1000;
+  const subDL = Number(b.submissionDeadline);
+  const revDL = Number(b.revealDeadline);
+  const isOwner = userAddress && b.owner.toLowerCase() === userAddress.toLowerCase();
+  let actions = "";
+  if (!b.judged && !b.finalized && now < subDL) {
+    actions = `<div class="status status-info">🔒 Commit phase open — go to Participate tab to submit!</div>`;
+  } else if (!b.judged && !b.finalized && now >= subDL && now < revDL) {
+    actions = `<div class="status status-warning">🔓 Reveal phase open — go to Participate tab to reveal!</div>`;
+  } else if (!b.judged && !b.finalized && now >= revDL && isOwner) {
+    actions = `<button class="btn btn-amber" onclick="judgeAll(${id})">🤖 Judge All (Owner Only)</button>`;
+  } else if (b.judged && !b.finalized && isOwner) {
+    actions = `<label>Winner Index</label><input id="winnerIdx" type="number" min="0" placeholder="0"/><button class="btn btn-green" onclick="finalizeWinner(${id})">🏆 Finalize Winner</button>`;
+  } else if (b.finalized) {
+    actions = `<div class="status status-success">🎉 Bounty finalized! Winner: submission #${b.winnerIndex}</div>`;
+  }
+  document.getElementById("detailActions").innerHTML = actions;
+  document.getElementById("bountyDetailCard").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+async function createBounty() {
+  if (!contract) { alert("Connect wallet first!"); return; }
+  const title = document.getElementById("cTitle").value.trim();
+  const rubric = document.getElementById("cRubric").value.trim();
+  const subDL = Math.floor(new Date(document.getElementById("cSubDL").value).getTime() / 1000);
+  const revDL = Math.floor(new Date(document.getElementById("cRevDL").value).getTime() / 1000);
+  const reward = document.getElementById("cReward").value;
+  if (!title || !rubric || !subDL || !revDL || !reward) { alert("Fill all fields!"); return; }
+  const status = document.getElementById("createStatus");
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating bounty...</div>';
+  try {
+    const tx = await contract.createBounty(title, rubric, subDL, revDL, { value: ethers.parseEther(reward) });
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    const receipt = await tx.wait();
+    status.innerHTML = `<div class="status status-success">✅ Bounty created! Tx: ${receipt.hash.slice(0,10)}...</div>`;
+    loadBounties();
+  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+}
+
+async function submitCommitment() {
+  if (!contract) { alert("Connect wallet first!"); return; }
+  const bountyId = document.getElementById("pBountyId").value;
+  const answer = document.getElementById("pAnswer").value.trim();
+  if (!bountyId || !answer) { alert("Fill all fields!"); return; }
+  const salt = ethers.hexlify(ethers.randomBytes(32));
+  const commitment = await contract.computeCommitment(answer, salt, userAddress, bountyId);
+  const status = document.getElementById("commitStatus");
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting commitment...</div>';
+  try {
+    const tx = await contract.submitCommitment(bountyId, commitment);
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    await tx.wait();
+    status.innerHTML = '<div class="status status-success">✅ Commitment submitted! Save your salt below.</div>';
+    document.getElementById("saltBox").style.display = "block";
+    document.getElementById("saltValue").textContent = salt;
+    document.getElementById("pAnswer").value = "";
+  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+}
+
+async function revealAnswer() {
+  if (!contract) { alert("Connect wallet first!"); return; }
+  const bountyId = document.getElementById("rBountyId").value;
+  const answer = document.getElementById("rAnswer").value.trim();
+  const salt = document.getElementById("rSalt").value.trim();
+  if (!bountyId || !answer || !salt) { alert("Fill all fields!"); return; }
+  const status = document.getElementById("revealStatus");
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Revealing answer...</div>';
+  try {
+    const tx = await contract.revealAnswer(bountyId, answer, salt);
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    await tx.wait();
+    status.innerHTML = '<div class="status status-success">✅ Answer revealed! You are now eligible for judging.</div>';
+  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+}
+
+async function judgeAll(bountyId) {
+  alert("judgeAll requires a Ritual LLM payload — please use the full frontend or call directly via the contract.");
+}
+
+async function finalizeWinner(bountyId) {
+  if (!contract) return;
+  const idx = document.getElementById("winnerIdx").value;
+  const status = document.getElementById("detailActions");
+  try {
+    const tx = await contract.finalizeWinner(bountyId, idx);
+    await tx.wait();
+    alert("Winner finalized!");
+    loadBounties();
+  } catch(e) { alert("Error: " + (e.reason || e.message)); }
+}
+
+function showTab(tab) {
+  ["bounties","create","participate"].forEach(t => {
+    document.getElementById("tab-" + t).style.display = t === tab ? "" : "none";
+  });
+  document.querySelectorAll(".tab").forEach((el, i) => {
+    el.classList.toggle("active", ["bounties","create","participate"][i] === tab);
+  });
+}
+
+// Set default deadlines
+const now = new Date();
+const sub = new Date(now.getTime() + 60*60*1000);
+const rev = new Date(now.getTime() + 2*60*60*1000);
+const fmt = d => d.toISOString().slice(0,16);
+document.getElementById("cSubDL").value = fmt(sub);
+document.getElementById("cRevDL").value = fmt(rev);
+</script>
+</body>
+</html>
