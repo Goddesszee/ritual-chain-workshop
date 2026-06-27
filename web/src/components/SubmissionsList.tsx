@@ -7,35 +7,50 @@ import { ritualChain } from "@/config/wagmi";
 import { shortenAddress } from "@/lib/format";
 import type { JudgeResult } from "@/lib/aiReview";
 import { Card, CardHeader, CardBody, Badge } from "@/components/ui";
+import type { Bounty } from "@/lib/bounty";
 
 export function SubmissionsList({
   bountyId,
+  bounty,
   count,
   judge,
   finalWinner,
 }: {
   bountyId: bigint;
+  bounty: Bounty;
   count: number;
   judge?: JudgeResult | null;
   finalWinner?: number;
 }) {
   const indices = Array.from({ length: count }, (_, i) => i);
+  const revealPhaseOpen =
+    !bounty.judged &&
+    !bounty.finalized &&
+    Date.now() / 1000 >= Number(bounty.submissionDeadline) &&
+    Date.now() / 1000 <  Number(bounty.revealDeadline);
 
   return (
     <Card>
       <CardHeader
-        title="Submissions"
-        subtitle="All submissions are judged together after the deadline."
+        title="Commitments"
+        subtitle={
+          bounty.judged
+            ? "All revealed answers have been judged."
+            : revealPhaseOpen
+              ? "Reveal phase is open. Answers visible after reveal."
+              : "Commitment phase. Answers hidden until reveal."
+        }
         action={<Badge tone="zinc">{count}</Badge>}
       />
       <CardBody className="space-y-3">
         {count === 0 ? (
-          <p className="text-sm text-zinc-500">No submissions yet.</p>
+          <p className="text-sm text-zinc-500">No commitments yet.</p>
         ) : (
           indices.map((i) => (
-            <SubmissionRow
+            <CommitmentRow
               key={i}
               bountyId={bountyId}
+              bounty={bounty}
               index={i}
               ranking={judge?.ranking?.find((r) => r.index === i)}
               recommended={judge?.winnerIndex === i}
@@ -48,30 +63,38 @@ export function SubmissionsList({
   );
 }
 
-function SubmissionRow({
+function CommitmentRow({
   bountyId,
+  bounty,
   index,
   ranking,
   recommended,
   isWinner,
 }: {
   bountyId: bigint;
+  bounty: Bounty;
   index: number;
   ranking?: { index: number; score: number; reason: string };
   recommended?: boolean;
   isWinner?: boolean;
 }) {
-  const { data, isLoading } = useReadContract({
+  // We read from getRevealedAnswers only after judging, so we only show revealed answers.
+  // For the commitment list we just show submitter + revealed status.
+  const { data: commitData } = useReadContract({
     address: contractAddress,
     abi: aiJudgeAbi,
-    functionName: "getSubmission",
-    args: [bountyId, BigInt(index)],
+    // Use getSubmissionCount proxy via bounties mapping — we read commitment via getCommitment
+    // but we don't have the submitter address here, so we use a trick:
+    // We call getRevealedAnswers and index into it.
+    functionName: "getRevealedAnswers",
+    args: [bountyId],
     chainId: ritualChain.id,
-    query: { enabled: !!contractAddress },
+    query: { enabled: !!contractAddress && bounty.judged },
   });
 
-  const submitter = data?.[0];
-  const answer = data?.[1];
+  const submitter = commitData?.[0]?.[index];
+  const answer    = commitData?.[1]?.[index];
+  const showAnswer = bounty.judged && !!answer;
 
   return (
     <div
@@ -87,7 +110,7 @@ function SubmissionRow({
         <div className="flex items-center gap-2">
           <span className="font-mono text-xs text-zinc-500">#{index}</span>
           <span className="font-mono text-sm text-zinc-300">
-            {submitter ? shortenAddress(submitter) : isLoading ? "loading…" : "-"}
+            {submitter ? shortenAddress(submitter) : "hidden"}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -97,12 +120,19 @@ function SubmissionRow({
           ) : recommended ? (
             <Badge tone="indigo">AI pick</Badge>
           ) : null}
+          {!showAnswer && !bounty.judged && (
+            <Badge tone="zinc">🔒 hidden</Badge>
+          )}
         </div>
       </div>
 
-      <p className="mt-2 whitespace-pre-wrap break-words text-sm text-zinc-200">
-        {answer ?? (isLoading ? "" : "-")}
-      </p>
+      {showAnswer ? (
+        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-zinc-200">{answer}</p>
+      ) : (
+        <p className="mt-2 text-xs text-zinc-600 italic">
+          Answer hidden until after judging.
+        </p>
+      )}
 
       {ranking?.reason ? (
         <p className="mt-2 border-t border-white/5 pt-2 text-xs text-zinc-400">
