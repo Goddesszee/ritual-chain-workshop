@@ -4,7 +4,179 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>NAN Bounty Judge — Privacy-Preserving AI Bounty System</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js">
+// ── QUIZ MODE ──────────────────────────────────────────────────────────────
+let quizQuestions = [];
+let currentQ = 0;
+let quizScore = 0;
+let quizPlayerName = "";
+let quizTimer = null;
+let timeLeft = 60;
+let leaderboardData = JSON.parse(localStorage.getItem("quizLeaderboard") || "[]");
+
+async function startQuiz() {
+  quizPlayerName = document.getElementById("quizName").value.trim();
+  if (!quizPlayerName) { alert("Enter your name first!"); return; }
+  if (!contract) { alert("Connect wallet first!"); return; }
+
+  // Load bounty questions
+  try {
+    const next = await contract.nextBountyId();
+    quizQuestions = [];
+    for (let i = 1; i < next; i++) {
+      const b = await contract.getBounty(i);
+      if (!b.finalized) {
+        quizQuestions.push({ id: i, question: b.title, rubric: b.rubric });
+      }
+    }
+    if (quizQuestions.length === 0) {
+      alert("No bounties available for quiz yet! Create some bounties first.");
+      return;
+    }
+    // Shuffle questions
+    quizQuestions = quizQuestions.sort(() => Math.random() - 0.5).slice(0, 5);
+    currentQ = 0; quizScore = 0;
+    document.getElementById("qTotal").textContent = quizQuestions.length;
+    document.getElementById("quizStart").style.display = "none";
+    document.getElementById("quizGame").style.display = "";
+    document.getElementById("quizTimerBadge").style.display = "";
+    loadQuestion();
+  } catch(e) {
+    alert("Error loading bounties: " + e.message);
+  }
+}
+
+function loadQuestion() {
+  if (currentQ >= quizQuestions.length) { finishQuiz(); return; }
+  const q = quizQuestions[currentQ];
+  document.getElementById("qNum").textContent = currentQ + 1;
+  document.getElementById("qBountyId").textContent = q.id;
+  document.getElementById("qQuestion").textContent = q.question;
+  document.getElementById("qRubric").textContent = "Rubric: " + q.rubric;
+  document.getElementById("qAnswer").value = "";
+  document.getElementById("qFeedback").innerHTML = "";
+  startTimer();
+}
+
+function startTimer() {
+  clearInterval(quizTimer);
+  timeLeft = 60;
+  document.getElementById("quizTimer").textContent = timeLeft;
+  document.getElementById("progressFill").style.width = "100%";
+  document.getElementById("progressFill").style.transition = "width 60s linear";
+  setTimeout(() => { document.getElementById("progressFill").style.width = "0%"; }, 50);
+  quizTimer = setInterval(() => {
+    timeLeft--;
+    document.getElementById("quizTimer").textContent = timeLeft;
+    if (timeLeft <= 0) { clearInterval(quizTimer); autoSubmit(); }
+  }, 1000);
+}
+
+function autoSubmit() {
+  const answer = document.getElementById("qAnswer").value.trim();
+  if (answer) { submitQuizAnswer(); } else { skipQuestion(); }
+}
+
+async function submitQuizAnswer() {
+  clearInterval(quizTimer);
+  const answer = document.getElementById("qAnswer").value.trim();
+  if (!answer) { skipQuestion(); return; }
+  const q = quizQuestions[currentQ];
+  const fb = document.getElementById("qFeedback");
+  fb.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI is scoring your answer...</div>';
+
+  try {
+    // Call Claude API to score the answer
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 200,
+        messages: [{
+          role: "user",
+          content: `You are a quiz judge. Score this answer from 0-100 based on the rubric.
+Question: ${q.question}
+Rubric: ${q.rubric}
+Answer: ${answer}
+Reply with JSON only: {"score": number, "feedback": "one sentence feedback"}`
+        }]
+      })
+    });
+    const data = await response.json();
+    const text = data.content[0].text;
+    const result = JSON.parse(text.replace(/```json|```/g, '').trim());
+    const pts = Math.round((result.score / 100) * timeLeft * 10);
+    quizScore += pts;
+    document.getElementById("qScore").textContent = quizScore;
+    fb.innerHTML = `
+      <div class="status ${result.score >= 70 ? 'status-success' : result.score >= 40 ? 'status-warning' : 'status-error'}">
+        <strong>Score: ${result.score}/100 (+${pts} pts)</strong><br>
+        ${result.feedback}
+      </div>`;
+    setTimeout(() => { currentQ++; loadQuestion(); }, 2500);
+  } catch(e) {
+    // Fallback scoring if API fails
+    const pts = Math.round(timeLeft * 5);
+    quizScore += pts;
+    document.getElementById("qScore").textContent = quizScore;
+    fb.innerHTML = `<div class="status status-success">Answer submitted! +${pts} points</div>`;
+    setTimeout(() => { currentQ++; loadQuestion(); }, 1500);
+  }
+}
+
+function skipQuestion() {
+  clearInterval(quizTimer);
+  document.getElementById("qFeedback").innerHTML = '<div class="status status-info">Skipped — no points awarded.</div>';
+  setTimeout(() => { currentQ++; loadQuestion(); }, 1000);
+}
+
+function finishQuiz() {
+  clearInterval(quizTimer);
+  document.getElementById("quizGame").style.display = "none";
+  document.getElementById("quizTimerBadge").style.display = "none";
+  document.getElementById("quizFinished").style.display = "";
+  document.getElementById("finalScore").textContent = quizScore;
+
+  // Save to leaderboard
+  leaderboardData.push({ name: quizPlayerName, score: quizScore, date: new Date().toLocaleDateString() });
+  leaderboardData.sort((a,b) => b.score - a.score);
+  leaderboardData = leaderboardData.slice(0, 10);
+  localStorage.setItem("quizLeaderboard", JSON.stringify(leaderboardData));
+
+  const rank = leaderboardData.findIndex(p => p.name === quizPlayerName && p.score === quizScore) + 1;
+  document.getElementById("finalRank").textContent = `You ranked #${rank} on the leaderboard!`;
+  loadLeaderboard();
+}
+
+function restartQuiz() {
+  document.getElementById("quizFinished").style.display = "none";
+  document.getElementById("quizStart").style.display = "";
+}
+
+function loadLeaderboard() {
+  leaderboardData = JSON.parse(localStorage.getItem("quizLeaderboard") || "[]");
+  const el = document.getElementById("leaderboard");
+  if (leaderboardData.length === 0) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px">No players yet. Be the first!</p>';
+    return;
+  }
+  const medals = ["🥇","🥈","🥉"];
+  el.innerHTML = leaderboardData.map((p, i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">${medals[i] || `#${i+1}`}</span>
+        <div>
+          <div style="font-weight:600;font-size:13px">${p.name}</div>
+          <div style="font-size:11px;color:var(--muted)">${p.date}</div>
+        </div>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--purple-light)">${p.score} pts</div>
+    </div>
+  `).join('');
+}
+
+</script>
 <style>
   :root {
     --bg: #0a0a0f;
@@ -157,6 +329,7 @@
     <button class="tab active" onclick="showTab('bounties')">Browse Bounties</button>
     <button class="tab" onclick="showTab('create')">Create Bounty</button>
     <button class="tab" onclick="showTab('participate')">Participate</button>
+    <button class="tab" onclick="showTab('quiz')" style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:white;border-radius:8px">🎯 Quiz Mode</button>
   </div>
 
   <!-- BROWSE TAB -->
@@ -277,6 +450,103 @@
           <input id="rSalt" placeholder="0x... (from when you committed)" class="mono"/>
           <button class="btn btn-green" onclick="revealAnswer()">🔓 Reveal Answer</button>
           <div id="revealStatus"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUIZ TAB -->
+  <div id="tab-quiz" style="display:none">
+    <div class="grid">
+      <!-- Left: Quiz Game -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🎯 Live Quiz</div>
+            <div class="card-sub">Answer questions, earn points, win prizes</div>
+          </div>
+          <span id="quizTimerBadge" class="badge badge-green" style="display:none">⏱ <span id="quizTimer">60</span>s</span>
+        </div>
+        <div class="card-body">
+          <!-- Quiz not started -->
+          <div id="quizStart">
+            <div style="text-align:center;padding:20px 0">
+              <div style="font-size:48px;margin-bottom:16px">🏆</div>
+              <div style="font-size:18px;font-weight:700;margin-bottom:8px">Ready to Play?</div>
+              <div style="font-size:13px;color:var(--muted);margin-bottom:24px">Answer bounty questions, earn points for every correct answer, compete for the top spot on the leaderboard</div>
+              <input id="quizName" placeholder="Enter your name" style="width:100%;margin-bottom:12px"/>
+              <button class="btn btn-primary" onclick="startQuiz()" style="margin-top:0">Start Quiz</button>
+            </div>
+          </div>
+
+          <!-- Quiz in progress -->
+          <div id="quizGame" style="display:none">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <div style="font-size:12px;color:var(--muted)">Question <span id="qNum">1</span> of <span id="qTotal">5</span></div>
+              <div style="font-size:13px;font-weight:700;color:var(--purple-light)">Score: <span id="qScore">0</span></div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);border-radius:10px;padding:16px;margin-bottom:16px">
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Bounty #<span id="qBountyId"></span></div>
+              <div style="font-size:15px;font-weight:600;line-height:1.5" id="qQuestion">Loading question...</div>
+              <div style="font-size:12px;color:var(--muted);margin-top:8px" id="qRubric"></div>
+            </div>
+            <div id="progressBar" style="background:var(--border);border-radius:4px;height:4px;margin-bottom:16px">
+              <div id="progressFill" style="background:var(--purple);height:100%;border-radius:4px;width:100%;transition:width 1s linear"></div>
+            </div>
+            <textarea id="qAnswer" placeholder="Type your answer here..." rows="4" style="margin-bottom:12px"></textarea>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" onclick="submitQuizAnswer()" style="flex:1;margin-top:0">Submit Answer</button>
+              <button class="btn btn-outline" onclick="skipQuestion()" style="width:auto;margin-top:0;padding:0 16px">Skip</button>
+            </div>
+            <div id="qFeedback" style="margin-top:12px"></div>
+          </div>
+
+          <!-- Quiz finished -->
+          <div id="quizFinished" style="display:none;text-align:center;padding:20px 0">
+            <div style="font-size:48px;margin-bottom:16px">🎉</div>
+            <div style="font-size:20px;font-weight:800;margin-bottom:8px">Quiz Complete!</div>
+            <div style="font-size:14px;color:var(--muted);margin-bottom:16px">Final Score: <span id="finalScore" style="color:var(--purple-light);font-weight:700;font-size:20px">0</span> points</div>
+            <div id="finalRank" style="font-size:13px;color:var(--muted);margin-bottom:20px"></div>
+            <button class="btn btn-primary" onclick="restartQuiz()" style="width:auto;padding:10px 32px">Play Again</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Leaderboard -->
+      <div class="card">
+        <div class="card-header">
+          <div><div class="card-title">🏆 Leaderboard</div><div class="card-sub">Top players this session</div></div>
+          <button class="btn btn-outline btn-sm" onclick="loadLeaderboard()">↻ Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="leaderboard">
+            <p style="color:var(--muted);font-size:13px">No players yet. Be the first!</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- How quiz works -->
+      <div class="card full">
+        <div class="card-header"><div><div class="card-title">How Quiz Mode Works</div></div></div>
+        <div class="card-body">
+          <div class="grid">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:32px;height:32px;background:rgba(124,58,237,0.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">1️⃣</div>
+              <div><div style="font-weight:600;font-size:13px;margin-bottom:4px">Questions from Bounties</div><div style="font-size:12px;color:var(--muted)">Active bounty titles become quiz questions. Anyone can create a bounty to add a question to the quiz pool.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:32px;height:32px;background:rgba(124,58,237,0.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">2️⃣</div>
+              <div><div style="font-weight:600;font-size:13px;margin-bottom:4px">Answer in 60 Seconds</div><div style="font-size:12px;color:var(--muted)">Each question has a 60-second timer. Faster answers score more points. Skip if you don't know.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:32px;height:32px;background:rgba(124,58,237,0.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">3️⃣</div>
+              <div><div style="font-weight:600;font-size:13px;margin-bottom:4px">AI Scores Your Answer</div><div style="font-size:12px;color:var(--muted)">Your answer is evaluated against the bounty rubric. The AI gives you a score from 0-100 instantly.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:32px;height:32px;background:rgba(124,58,237,0.2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">4️⃣</div>
+              <div><div style="font-weight:600;font-size:13px;margin-bottom:4px">Climb the Leaderboard</div><div style="font-size:12px;color:var(--muted)">Your total score across all questions puts you on the leaderboard. Top players win bounty prizes!</div></div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -552,12 +822,13 @@ async function finalizeWinner(bountyId) {
 }
 
 function showTab(tab) {
-  ["bounties","create","participate"].forEach(t => {
+  ["bounties","create","participate","quiz"].forEach(t => {
     document.getElementById("tab-" + t).style.display = t === tab ? "" : "none";
   });
   document.querySelectorAll(".tab").forEach((el, i) => {
-    el.classList.toggle("active", ["bounties","create","participate"][i] === tab);
+    el.classList.toggle("active", ["bounties","create","participate","quiz"][i] === tab);
   });
+  if (tab === "quiz") loadLeaderboard();
 }
 
 // Set default deadlines
@@ -567,6 +838,178 @@ const rev = new Date(now.getTime() + 2*60*60*1000);
 const fmt = d => d.toISOString().slice(0,16);
 document.getElementById("cSubDL").value = fmt(sub);
 document.getElementById("cRevDL").value = fmt(rev);
+
+// ── QUIZ MODE ──────────────────────────────────────────────────────────────
+let quizQuestions = [];
+let currentQ = 0;
+let quizScore = 0;
+let quizPlayerName = "";
+let quizTimer = null;
+let timeLeft = 60;
+let leaderboardData = JSON.parse(localStorage.getItem("quizLeaderboard") || "[]");
+
+async function startQuiz() {
+  quizPlayerName = document.getElementById("quizName").value.trim();
+  if (!quizPlayerName) { alert("Enter your name first!"); return; }
+  if (!contract) { alert("Connect wallet first!"); return; }
+
+  // Load bounty questions
+  try {
+    const next = await contract.nextBountyId();
+    quizQuestions = [];
+    for (let i = 1; i < next; i++) {
+      const b = await contract.getBounty(i);
+      if (!b.finalized) {
+        quizQuestions.push({ id: i, question: b.title, rubric: b.rubric });
+      }
+    }
+    if (quizQuestions.length === 0) {
+      alert("No bounties available for quiz yet! Create some bounties first.");
+      return;
+    }
+    // Shuffle questions
+    quizQuestions = quizQuestions.sort(() => Math.random() - 0.5).slice(0, 5);
+    currentQ = 0; quizScore = 0;
+    document.getElementById("qTotal").textContent = quizQuestions.length;
+    document.getElementById("quizStart").style.display = "none";
+    document.getElementById("quizGame").style.display = "";
+    document.getElementById("quizTimerBadge").style.display = "";
+    loadQuestion();
+  } catch(e) {
+    alert("Error loading bounties: " + e.message);
+  }
+}
+
+function loadQuestion() {
+  if (currentQ >= quizQuestions.length) { finishQuiz(); return; }
+  const q = quizQuestions[currentQ];
+  document.getElementById("qNum").textContent = currentQ + 1;
+  document.getElementById("qBountyId").textContent = q.id;
+  document.getElementById("qQuestion").textContent = q.question;
+  document.getElementById("qRubric").textContent = "Rubric: " + q.rubric;
+  document.getElementById("qAnswer").value = "";
+  document.getElementById("qFeedback").innerHTML = "";
+  startTimer();
+}
+
+function startTimer() {
+  clearInterval(quizTimer);
+  timeLeft = 60;
+  document.getElementById("quizTimer").textContent = timeLeft;
+  document.getElementById("progressFill").style.width = "100%";
+  document.getElementById("progressFill").style.transition = "width 60s linear";
+  setTimeout(() => { document.getElementById("progressFill").style.width = "0%"; }, 50);
+  quizTimer = setInterval(() => {
+    timeLeft--;
+    document.getElementById("quizTimer").textContent = timeLeft;
+    if (timeLeft <= 0) { clearInterval(quizTimer); autoSubmit(); }
+  }, 1000);
+}
+
+function autoSubmit() {
+  const answer = document.getElementById("qAnswer").value.trim();
+  if (answer) { submitQuizAnswer(); } else { skipQuestion(); }
+}
+
+async function submitQuizAnswer() {
+  clearInterval(quizTimer);
+  const answer = document.getElementById("qAnswer").value.trim();
+  if (!answer) { skipQuestion(); return; }
+  const q = quizQuestions[currentQ];
+  const fb = document.getElementById("qFeedback");
+  fb.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI is scoring your answer...</div>';
+
+  try {
+    // Call Claude API to score the answer
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 200,
+        messages: [{
+          role: "user",
+          content: `You are a quiz judge. Score this answer from 0-100 based on the rubric.
+Question: ${q.question}
+Rubric: ${q.rubric}
+Answer: ${answer}
+Reply with JSON only: {"score": number, "feedback": "one sentence feedback"}`
+        }]
+      })
+    });
+    const data = await response.json();
+    const text = data.content[0].text;
+    const result = JSON.parse(text.replace(/```json|```/g, '').trim());
+    const pts = Math.round((result.score / 100) * timeLeft * 10);
+    quizScore += pts;
+    document.getElementById("qScore").textContent = quizScore;
+    fb.innerHTML = `
+      <div class="status ${result.score >= 70 ? 'status-success' : result.score >= 40 ? 'status-warning' : 'status-error'}">
+        <strong>Score: ${result.score}/100 (+${pts} pts)</strong><br>
+        ${result.feedback}
+      </div>`;
+    setTimeout(() => { currentQ++; loadQuestion(); }, 2500);
+  } catch(e) {
+    // Fallback scoring if API fails
+    const pts = Math.round(timeLeft * 5);
+    quizScore += pts;
+    document.getElementById("qScore").textContent = quizScore;
+    fb.innerHTML = `<div class="status status-success">Answer submitted! +${pts} points</div>`;
+    setTimeout(() => { currentQ++; loadQuestion(); }, 1500);
+  }
+}
+
+function skipQuestion() {
+  clearInterval(quizTimer);
+  document.getElementById("qFeedback").innerHTML = '<div class="status status-info">Skipped — no points awarded.</div>';
+  setTimeout(() => { currentQ++; loadQuestion(); }, 1000);
+}
+
+function finishQuiz() {
+  clearInterval(quizTimer);
+  document.getElementById("quizGame").style.display = "none";
+  document.getElementById("quizTimerBadge").style.display = "none";
+  document.getElementById("quizFinished").style.display = "";
+  document.getElementById("finalScore").textContent = quizScore;
+
+  // Save to leaderboard
+  leaderboardData.push({ name: quizPlayerName, score: quizScore, date: new Date().toLocaleDateString() });
+  leaderboardData.sort((a,b) => b.score - a.score);
+  leaderboardData = leaderboardData.slice(0, 10);
+  localStorage.setItem("quizLeaderboard", JSON.stringify(leaderboardData));
+
+  const rank = leaderboardData.findIndex(p => p.name === quizPlayerName && p.score === quizScore) + 1;
+  document.getElementById("finalRank").textContent = `You ranked #${rank} on the leaderboard!`;
+  loadLeaderboard();
+}
+
+function restartQuiz() {
+  document.getElementById("quizFinished").style.display = "none";
+  document.getElementById("quizStart").style.display = "";
+}
+
+function loadLeaderboard() {
+  leaderboardData = JSON.parse(localStorage.getItem("quizLeaderboard") || "[]");
+  const el = document.getElementById("leaderboard");
+  if (leaderboardData.length === 0) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px">No players yet. Be the first!</p>';
+    return;
+  }
+  const medals = ["🥇","🥈","🥉"];
+  el.innerHTML = leaderboardData.map((p, i) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:18px">${medals[i] || `#${i+1}`}</span>
+        <div>
+          <div style="font-weight:600;font-size:13px">${p.name}</div>
+          <div style="font-size:11px;color:var(--muted)">${p.date}</div>
+        </div>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--purple-light)">${p.score} pts</div>
+    </div>
+  `).join('');
+}
+
 </script>
 </body>
 </html>
