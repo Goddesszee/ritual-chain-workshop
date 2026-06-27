@@ -6,4 +6,10 @@ export const executorAddress =
   (process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS as `0x${string}` | undefined) ??
   undefined;
 
+export const ritualChainId: number =
+  parseInt(process.env.NEXT_PUBLIC_CHAIN_ID ?? "1979", 10);
+
+export const ritualRpcUrl: string =
+  process.env.NEXT_PUBLIC_RPC_URL ?? "https://rpc.ritualfoundation.org";
+
 export const isContractConfigured = !!contractAddress;
