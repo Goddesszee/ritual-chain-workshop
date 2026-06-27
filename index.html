@@ -3,134 +3,274 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>NAN Bounty Judge — Privacy-Preserving AI Bounty System</title>
+<title>Bounty Judge — Ritual Chain</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js"></script>
 <style>
-  :root {
-    --bg: #0a0a0f;
-    --card: #13131a;
-    --border: #2a2a3a;
-    --purple: #7c3aed;
-    --purple-light: #a78bfa;
-    --green: #10b981;
-    --amber: #f59e0b;
-    --red: #ef4444;
-    --text: #e2e8f0;
-    --muted: #64748b;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
+:root {
+  --bg: #000000;
+  --bg2: #0a0a0a;
+  --card: #111111;
+  --border: #1f1f1f;
+  --border2: #2a2a2a;
+  --green: #a8ff3e;
+  --green-dim: #7bc922;
+  --green-glow: rgba(168,255,62,0.15);
+  --green-border: rgba(168,255,62,0.3);
+  --text: #ffffff;
+  --muted: #666666;
+  --muted2: #444444;
+  --red: #ff4444;
+  --amber: #ffaa00;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; min-height: 100vh; }
 
-  /* Header */
-  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(10px); }
-  .logo { display: flex; align-items: center; gap: 12px; }
-  .logo-icon { width: 36px; height: 36px; background: var(--purple); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: white; }
-  .logo-text { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #a78bfa, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-  .logo-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
-  #connectBtn { background: var(--purple); color: white; border: none; padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-  #connectBtn:hover { background: #6d28d9; transform: translateY(-1px); }
-  #walletInfo { font-size: 13px; color: var(--purple-light); background: rgba(124,58,237,0.1); padding: 6px 14px; border-radius: 8px; border: 1px solid rgba(124,58,237,0.3); }
+/* ── Header ── */
+header {
+  background: rgba(0,0,0,0.95);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  backdrop-filter: blur(20px);
+}
+.logo { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.logo-mark {
+  width: 32px; height: 32px;
+  border: 1.5px solid var(--green);
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 900; color: var(--green);
+  box-shadow: 0 0 12px var(--green-glow);
+}
+.logo-name { font-size: 15px; font-weight: 700; color: var(--text); letter-spacing: -0.3px; }
+.logo-chain { font-size: 11px; color: var(--muted); margin-top: 1px; }
+#connectBtn {
+  background: var(--green);
+  color: #000;
+  border: none;
+  padding: 8px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.2px;
+}
+#connectBtn:hover { background: #bfff5a; transform: translateY(-1px); box-shadow: 0 4px 20px var(--green-glow); }
+#walletInfo {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--green);
+  background: var(--green-glow);
+  border: 1px solid var(--green-border);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-family: monospace;
+}
 
-  /* Layout */
-  main { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
-  .hero { text-align: center; margin-bottom: 48px; }
-  .hero h1 { font-size: 42px; font-weight: 800; background: linear-gradient(135deg, #e2e8f0, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px; }
-  .hero p { color: var(--muted); font-size: 16px; max-width: 500px; margin: 0 auto 24px; }
-  .contract-badge { display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); padding: 8px 16px; border-radius: 100px; font-size: 12px; font-family: monospace; color: var(--muted); }
-  .contract-badge span { color: var(--green); }
+/* ── Main ── */
+main { max-width: 1060px; margin: 0 auto; padding: 48px 24px; }
 
-  /* Phase indicator */
-  .phases { display: flex; gap: 8px; margin-bottom: 32px; overflow-x: auto; padding-bottom: 4px; }
-  .phase { flex: 1; min-width: 120px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; transition: all 0.2s; }
-  .phase.active { border-color: var(--purple); background: rgba(124,58,237,0.1); }
-  .phase-num { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
-  .phase-name { font-size: 13px; font-weight: 600; }
-  .phase.active .phase-name { color: var(--purple-light); }
+/* ── Hero ── */
+.hero { margin-bottom: 56px; }
+.hero-tag {
+  display: inline-flex; align-items: center; gap-6px;
+  font-size: 11px; font-weight: 700; color: var(--green);
+  text-transform: uppercase; letter-spacing: 1.5px;
+  margin-bottom: 20px;
+}
+.hero-tag::before { content: '●'; margin-right: 6px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:0.4 } }
+.hero h1 {
+  font-size: 52px; font-weight: 800;
+  line-height: 1.1; letter-spacing: -2px;
+  margin-bottom: 16px;
+}
+.hero h1 span { color: var(--green); }
+.hero p { font-size: 16px; color: var(--muted); max-width: 480px; line-height: 1.6; margin-bottom: 28px; }
+.contract-pill {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--card);
+  border: 1px solid var(--border2);
+  padding: 8px 16px; border-radius: 100px;
+  font-size: 12px; font-family: monospace; color: var(--muted);
+}
+.contract-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px var(--green); }
 
-  /* Grid */
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  @media(max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+/* ── Phases ── */
+.phases { display: flex; gap: 1px; background: var(--border); border-radius: 10px; overflow: hidden; margin-bottom: 40px; }
+.phase {
+  flex: 1; padding: 14px 12px; text-align: center;
+  background: var(--bg2); cursor: default;
+  transition: background 0.2s;
+}
+.phase.active { background: var(--green-glow); }
+.phase-num { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.phase-name { font-size: 13px; font-weight: 600; color: var(--muted); }
+.phase.active .phase-name { color: var(--green); }
 
-  /* Cards */
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
-  .card-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
-  .card-title { font-size: 15px; font-weight: 700; }
-  .card-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
-  .card-body { padding: 20px 24px; }
+/* ── Tabs ── */
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 32px; }
+.tab {
+  padding: 12px 20px; border: none; background: none;
+  color: var(--muted); font-size: 14px; font-weight: 500;
+  cursor: pointer; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; transition: all 0.15s;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--green); border-bottom-color: var(--green); font-weight: 600; }
 
-  /* Form elements */
-  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; margin-top: 14px; }
-  label:first-child { margin-top: 0; }
-  input, textarea, select { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
-  input:focus, textarea:focus { border-color: var(--purple); }
-  textarea { resize: vertical; min-height: 80px; }
-  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+/* ── Grid ── */
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media(max-width:768px) { .grid { grid-template-columns: 1fr; } }
+.full { grid-column: 1/-1; }
 
-  /* Buttons */
-  .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 16px; }
-  .btn-primary { background: var(--purple); color: white; }
-  .btn-primary:hover { background: #6d28d9; transform: translateY(-1px); }
-  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
-  .btn-green { background: var(--green); color: white; }
-  .btn-green:hover { background: #059669; }
-  .btn-amber { background: var(--amber); color: #000; }
+/* ── Cards ── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px; overflow: hidden;
+}
+.card-header {
+  padding: 18px 20px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-title { font-size: 14px; font-weight: 700; }
+.card-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.card-body { padding: 20px; }
 
-  /* Badges */
-  .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; }
-  .badge-green { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
-  .badge-purple { background: rgba(124,58,237,0.15); color: var(--purple-light); border: 1px solid rgba(124,58,237,0.3); }
-  .badge-amber { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
-  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+/* ── Forms ── */
+label {
+  display: block; font-size: 11px; font-weight: 600;
+  color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.8px; margin-bottom: 6px; margin-top: 16px;
+}
+label:first-child { margin-top: 0; }
+input, textarea {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 10px 14px;
+  color: var(--text); font-size: 14px; font-family: inherit;
+  outline: none; transition: border-color 0.15s;
+}
+input:focus, textarea:focus { border-color: var(--green); box-shadow: 0 0 0 3px var(--green-glow); }
+textarea { resize: vertical; min-height: 80px; }
+.hint { font-size: 11px; color: var(--muted2); margin-top: 5px; }
 
-  /* Status messages */
-  .status { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
-  .status-success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: var(--green); }
-  .status-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
-  .status-info { background: rgba(124,58,237,0.1); border: 1px solid rgba(124,58,237,0.3); color: var(--purple-light); }
-  .status-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--amber); }
+/* ── Buttons ── */
+.btn {
+  width: 100%; padding: 11px 20px;
+  border: none; border-radius: 8px;
+  font-size: 14px; font-weight: 700;
+  cursor: pointer; transition: all 0.15s;
+  margin-top: 16px; letter-spacing: 0.2px;
+}
+.btn-primary { background: var(--green); color: #000; }
+.btn-primary:hover { background: #bfff5a; box-shadow: 0 4px 20px var(--green-glow); }
+.btn-primary:disabled { background: var(--border2); color: var(--muted); cursor: not-allowed; box-shadow: none; }
+.btn-outline { background: transparent; color: var(--green); border: 1px solid var(--green-border); }
+.btn-outline:hover { background: var(--green-glow); }
+.btn-sm { width: auto; padding: 7px 14px; font-size: 12px; margin-top: 0; }
 
-  /* Bounty list */
-  .bounty-item { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
-  .bounty-item:hover { border-color: var(--purple); background: rgba(124,58,237,0.05); }
-  .bounty-item.selected { border-color: var(--purple); background: rgba(124,58,237,0.08); }
-  .bounty-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
-  .bounty-meta { display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+/* ── Badges ── */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.badge-green { background: var(--green-glow); color: var(--green); border: 1px solid var(--green-border); }
+.badge-amber { background: rgba(255,170,0,0.1); color: var(--amber); border: 1px solid rgba(255,170,0,0.3); }
+.badge-muted { background: rgba(255,255,255,0.05); color: var(--muted); border: 1px solid var(--border2); }
 
-  /* Salt box */
-  .salt-box { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.3); border-radius: 10px; padding: 14px; margin-top: 12px; }
-  .salt-box-title { font-size: 12px; font-weight: 700; color: var(--amber); margin-bottom: 6px; }
-  .salt-value { font-family: monospace; font-size: 11px; color: var(--text); word-break: break-all; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; }
+/* ── Status ── */
+.status { margin-top: 12px; padding: 10px 14px; border-radius: 8px; font-size: 13px; line-height: 1.5; }
+.status-success { background: var(--green-glow); border: 1px solid var(--green-border); color: var(--green); }
+.status-error { background: rgba(255,68,68,0.08); border: 1px solid rgba(255,68,68,0.25); color: var(--red); }
+.status-info { background: rgba(255,255,255,0.04); border: 1px solid var(--border2); color: var(--muted); }
+.status-warning { background: rgba(255,170,0,0.08); border: 1px solid rgba(255,170,0,0.25); color: var(--amber); }
 
-  /* Full width span */
-  .full { grid-column: 1 / -1; }
+/* ── Bounty items ── */
+.bounty-item {
+  border: 1px solid var(--border);
+  border-radius: 10px; padding: 16px;
+  margin-bottom: 8px; cursor: pointer;
+  transition: all 0.15s;
+}
+.bounty-item:hover { border-color: var(--border2); background: rgba(255,255,255,0.02); }
+.bounty-item.selected { border-color: var(--green); background: var(--green-glow); }
+.bounty-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.bounty-meta { display: flex; gap: 16px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 
-  /* Tabs */
-  .tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.04); padding: 4px; border-radius: 10px; margin-bottom: 20px; }
-  .tab { flex: 1; padding: 8px; border: none; background: none; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 7px; transition: all 0.2s; }
-  .tab.active { background: var(--purple); color: white; }
+/* ── Salt box ── */
+.salt-box {
+  background: rgba(255,170,0,0.05);
+  border: 1px solid rgba(255,170,0,0.25);
+  border-radius: 8px; padding: 14px; margin-top: 12px;
+}
+.salt-title { font-size: 11px; font-weight: 700; color: var(--amber); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px; }
+.salt-value {
+  font-family: monospace; font-size: 11px;
+  color: var(--text); word-break: break-all;
+  background: rgba(0,0,0,0.4);
+  padding: 8px 10px; border-radius: 6px;
+}
 
-  /* Loading spinner */
-  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ── Stats ── */
+.stat { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--border); }
+.stat:last-child { border: none; }
+.stat-label { font-size: 12px; color: var(--muted); }
+.stat-value { font-size: 13px; font-weight: 600; }
 
-  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
-  .mono { font-family: monospace; font-size: 12px; }
-  .stat { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
-  .stat:last-child { border-bottom: none; }
-  .stat-label { font-size: 12px; color: var(--muted); }
-  .stat-value { font-size: 13px; font-weight: 600; }
+/* ── How it works ── */
+.step { display: flex; gap: 14px; align-items: flex-start; }
+.step-num {
+  width: 26px; height: 26px; flex-shrink: 0;
+  border: 1px solid var(--border2);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: var(--muted);
+}
+.step.done .step-num { border-color: var(--green); color: var(--green); }
+.step-text { font-size: 13px; line-height: 1.6; }
+.step-text strong { color: var(--text); display: block; margin-bottom: 2px; }
+.step-text span { color: var(--muted); }
+
+/* ── Spinner ── */
+.spinner {
+  display: inline-block; width: 13px; height: 13px;
+  border: 2px solid rgba(0,0,0,0.3);
+  border-top-color: #000;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 6px; vertical-align: middle;
+}
+.spinner-white { border-color: rgba(255,255,255,0.2); border-top-color: #fff; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.mono { font-family: monospace; font-size: 12px; }
+.divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo">
-    <div class="logo-icon">B</div>
+  <a class="logo" href="#">
+    <div class="logo-mark">R</div>
     <div>
-      <div class="logo-text">Bounty Judge</div>
-      <div class="logo-sub">Privacy-Preserving · Ritual Chain</div>
+      <div class="logo-name">Bounty Judge</div>
+      <div class="logo-chain">Ritual Chain · Privacy-Preserving</div>
     </div>
-  </div>
+  </a>
   <div id="walletSection">
     <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
   </div>
@@ -138,145 +278,168 @@
 
 <main>
   <div class="hero">
-    <h1>AI Bounty Judge</h1>
-    <p>Submit answers privately. Reveal after the deadline. Let Ritual AI judge fairly.</p>
-    <div class="contract-badge">
-      Contract: <span>0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b</span>
+    <div class="hero-tag">Live on Ritual Chain</div>
+    <h1>AI Bounty Judge<br><span>Privacy-First.</span></h1>
+    <p>Submit only a hash. Reveal after the deadline. Ritual AI judges all answers fairly in a single batch call.</p>
+    <div class="contract-pill">
+      <div class="dot"></div>
+      0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b
     </div>
   </div>
 
   <div class="phases">
-    <div class="phase active" id="phase0"><div class="phase-num">Phase 0</div><div class="phase-name">🏆 Create</div></div>
-    <div class="phase" id="phase1"><div class="phase-num">Phase 1</div><div class="phase-name">🔒 Commit</div></div>
-    <div class="phase" id="phase2"><div class="phase-num">Phase 2</div><div class="phase-name">🔓 Reveal</div></div>
-    <div class="phase" id="phase3"><div class="phase-num">Phase 3</div><div class="phase-name">🤖 Judge</div></div>
-    <div class="phase" id="phase4"><div class="phase-num">Phase 4</div><div class="phase-name">🎉 Finalize</div></div>
+    <div class="phase active" id="ph0"><div class="phase-num">01</div><div class="phase-name">Create</div></div>
+    <div class="phase" id="ph1"><div class="phase-num">02</div><div class="phase-name">Commit</div></div>
+    <div class="phase" id="ph2"><div class="phase-num">03</div><div class="phase-name">Reveal</div></div>
+    <div class="phase" id="ph3"><div class="phase-num">04</div><div class="phase-name">Judge</div></div>
+    <div class="phase" id="ph4"><div class="phase-num">05</div><div class="phase-name">Finalize</div></div>
   </div>
 
   <div class="tabs">
-    <button class="tab active" onclick="showTab('bounties')">Browse Bounties</button>
-    <button class="tab" onclick="showTab('create')">Create Bounty</button>
-    <button class="tab" onclick="showTab('participate')">Participate</button>
+    <button class="tab active" onclick="showTab('browse')">Browse</button>
+    <button class="tab" onclick="showTab('create')">Create</button>
+    <button class="tab" onclick="showTab('commit')">Commit</button>
+    <button class="tab" onclick="showTab('reveal')">Reveal</button>
   </div>
 
-  <!-- BROWSE TAB -->
-  <div id="tab-bounties">
+  <!-- BROWSE -->
+  <div id="tab-browse">
     <div class="grid">
       <div class="card full">
         <div class="card-header">
-          <div><div class="card-title">Active Bounties</div><div class="card-sub">Click a bounty to view details</div></div>
-          <button class="btn btn-primary" style="width:auto;margin:0;padding:8px 16px" onclick="loadBounties()">Refresh</button>
+          <div><div class="card-title">Active Bounties</div><div class="card-sub">Click any bounty to interact</div></div>
+          <button class="btn btn-outline btn-sm" onclick="loadBounties()">↻ Refresh</button>
         </div>
         <div class="card-body">
           <div id="bountyList"><p style="color:var(--muted);font-size:13px">Connect your wallet to load bounties.</p></div>
         </div>
       </div>
-
-      <div class="card full" id="bountyDetailCard" style="display:none">
+      <div class="card full" id="detailCard" style="display:none">
         <div class="card-header">
-          <div><div class="card-title" id="detailTitle">Bounty Details</div><div class="card-sub" id="detailSub"></div></div>
-          <span id="detailBadge" class="badge badge-green">Open</span>
+          <div><div class="card-title" id="dTitle">-</div><div class="card-sub" id="dOwner">-</div></div>
+          <span id="dBadge" class="badge badge-green">Open</span>
         </div>
         <div class="card-body">
           <div class="grid">
             <div>
-              <div class="stat"><span class="stat-label">Reward</span><span class="stat-value" id="detailReward">-</span></div>
-              <div class="stat"><span class="stat-label">Commit Deadline</span><span class="stat-value" id="detailSubDL">-</span></div>
-              <div class="stat"><span class="stat-label">Reveal Deadline</span><span class="stat-value" id="detailRevDL">-</span></div>
-              <div class="stat"><span class="stat-label">Submissions</span><span class="stat-value" id="detailCount">-</span></div>
+              <div class="stat"><span class="stat-label">Prize</span><span class="stat-value" id="dReward">-</span></div>
+              <div class="stat"><span class="stat-label">Commitments</span><span class="stat-value" id="dCount">-</span></div>
+              <div class="stat"><span class="stat-label">Commit deadline</span><span class="stat-value" id="dSubDL">-</span></div>
+              <div class="stat"><span class="stat-label">Reveal deadline</span><span class="stat-value" id="dRevDL">-</span></div>
             </div>
             <div>
-              <label>Rubric</label>
-              <div id="detailRubric" style="font-size:13px;color:var(--muted);line-height:1.6"></div>
+              <label>Judging Rubric</label>
+              <div id="dRubric" style="font-size:13px;color:var(--muted);line-height:1.7;margin-top:6px"></div>
             </div>
           </div>
-          <div id="detailActions" style="margin-top:16px"></div>
+          <hr class="divider"/>
+          <div id="dActions"></div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- CREATE TAB -->
+  <!-- CREATE -->
   <div id="tab-create" style="display:none">
     <div class="grid">
       <div class="card">
         <div class="card-header"><div><div class="card-title">Create a Bounty</div><div class="card-sub">Fund a prize and set two deadlines</div></div></div>
         <div class="card-body">
           <label>Title</label>
-          <input id="cTitle" placeholder="Best smart contract optimization..."/>
-          <label>Rubric <span style="color:var(--muted);font-weight:400">(how AI will judge)</span></label>
-          <textarea id="cRubric" placeholder="Correctness 50%, gas efficiency 30%, clarity 20%..."></textarea>
+          <input id="cTitle" placeholder="Best MEV protection strategy..."/>
+          <label>Judging Rubric</label>
+          <textarea id="cRubric" placeholder="Correctness 50%, originality 30%, clarity 20%..."></textarea>
           <label>Commit Deadline</label>
           <input id="cSubDL" type="datetime-local"/>
           <label>Reveal Deadline</label>
           <input id="cRevDL" type="datetime-local"/>
-          <label>Prize (RITUAL)</label>
+          <label>Prize Amount (RITUAL)</label>
           <input id="cReward" type="number" min="0.001" step="0.001" placeholder="1.0"/>
-          <button class="btn btn-primary" onclick="createBounty()">🏆 Create Bounty</button>
+          <button class="btn btn-primary" onclick="createBounty()">Create Bounty</button>
           <div id="createStatus"></div>
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><div><div class="card-title">How It Works</div></div></div>
+        <div class="card-header"><div><div class="card-title">How it works</div></div></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:20px">
+          <div class="step done"><div class="step-num">1</div><div class="step-text"><strong>Create & Fund</strong><span>Set question, rubric, two deadlines. Prize locked on-chain.</span></div></div>
+          <div class="step"><div class="step-num">2</div><div class="step-text"><strong>Participants Commit</strong><span>Submit only a keccak256 hash. Answer stays completely hidden.</span></div></div>
+          <div class="step"><div class="step-num">3</div><div class="step-text"><strong>Reveal Phase Opens</strong><span>After commit deadline. Contract verifies hash matches answer.</span></div></div>
+          <div class="step"><div class="step-num">4</div><div class="step-text"><strong>Ritual AI Judges</strong><span>One batch LLM call — all revealed answers judged together.</span></div></div>
+          <div class="step"><div class="step-num">5</div><div class="step-text"><strong>Winner Paid</strong><span>Owner finalizes, prize sent instantly on-chain.</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMMIT -->
+  <div id="tab-commit" style="display:none">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Submit Commitment</div><div class="card-sub">Your answer stays completely hidden until reveal</div></div></div>
         <div class="card-body">
-          <div style="display:flex;flex-direction:column;gap:16px">
-            <div style="display:flex;gap:12px;align-items:flex-start">
-              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">1</div>
-              <div><div style="font-weight:600;font-size:13px">Create & Fund</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Set your bounty question, rubric, and two deadlines. Prize locked in contract.</div></div>
-            </div>
-            <div style="display:flex;gap:12px;align-items:flex-start">
-              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">2</div>
-              <div><div style="font-weight:600;font-size:13px">Participants Commit</div><div style="font-size:12px;color:var(--muted);margin-top:2px">They submit only a hash — answer stays completely hidden.</div></div>
-            </div>
-            <div style="display:flex;gap:12px;align-items:flex-start">
-              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">3</div>
-              <div><div style="font-weight:600;font-size:13px">Reveal Phase</div><div style="font-size:12px;color:var(--muted);margin-top:2px">After commit deadline, participants reveal. Contract verifies the hash matches.</div></div>
-            </div>
-            <div style="display:flex;gap:12px;align-items:flex-start">
-              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">4</div>
-              <div><div style="font-weight:600;font-size:13px">Ritual AI Judges</div><div style="font-size:12px;color:var(--muted);margin-top:2px">One batch LLM call judges all revealed answers against your rubric.</div></div>
-            </div>
-            <div style="display:flex;gap:12px;align-items:flex-start">
-              <div style="width:28px;height:28px;background:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">5</div>
-              <div><div style="font-weight:600;font-size:13px">Winner Paid</div><div style="font-size:12px;color:var(--muted);margin-top:2px">You finalize the winner and they receive the full prize instantly.</div></div>
-            </div>
+          <div class="status status-info" style="margin-bottom:16px">
+            Your answer is hashed locally and only the hash is sent on-chain. No one can read your answer until you reveal it.
+          </div>
+          <label>Bounty ID</label>
+          <input id="pId" type="number" placeholder="1" min="1"/>
+          <label>Your Answer</label>
+          <textarea id="pAnswer" placeholder="Write your full answer here..."></textarea>
+          <div class="hint">This stays private — only a hash will be stored on-chain.</div>
+          <button class="btn btn-primary" onclick="submitCommitment()">Submit Commitment</button>
+          <div id="commitStatus"></div>
+          <div id="saltBox" style="display:none" class="salt-box">
+            <div class="salt-title">⚠ Save your salt — required to reveal!</div>
+            <div class="salt-value" id="saltVal"></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Commitment Formula</div><div class="card-sub">How your answer is protected</div></div></div>
+        <div class="card-body">
+          <div style="background:var(--bg);border:1px solid var(--border2);border-radius:8px;padding:16px;font-family:monospace;font-size:12px;line-height:2;color:var(--muted)">
+            commitment =<br/>
+            &nbsp;&nbsp;keccak256(<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--green)">answer</span> +<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--green)">salt</span> +<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--green)">msg.sender</span> +<br/>
+            &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--green)">bountyId</span><br/>
+            &nbsp;&nbsp;)
+          </div>
+          <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:12px;color:var(--muted)"><span style="color:var(--green);font-weight:600">salt</span> — random bytes32, prevents brute-force</div>
+            <div style="font-size:12px;color:var(--muted)"><span style="color:var(--green);font-weight:600">msg.sender</span> — prevents commitment replay attacks</div>
+            <div style="font-size:12px;color:var(--muted)"><span style="color:var(--green);font-weight:600">bountyId</span> — prevents cross-bounty reuse</div>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- PARTICIPATE TAB -->
-  <div id="tab-participate" style="display:none">
+  <!-- REVEAL -->
+  <div id="tab-reveal" style="display:none">
     <div class="grid">
       <div class="card">
-        <div class="card-header"><div><div class="card-title">🔒 Submit Commitment</div><div class="card-sub">Your answer stays hidden until reveal phase</div></div></div>
+        <div class="card-header"><div><div class="card-title">Reveal Answer</div><div class="card-sub">Only after submission deadline has passed</div></div></div>
         <div class="card-body">
           <label>Bounty ID</label>
-          <input id="pBountyId" type="number" placeholder="1" min="1"/>
-          <label>Your Answer</label>
-          <textarea id="pAnswer" placeholder="Write your answer here..."></textarea>
-          <div class="hint">Your answer will NOT be stored on-chain yet — only its hash.</div>
-          <button class="btn btn-primary" onclick="submitCommitment()">🔒 Submit Commitment</button>
-          <div id="commitStatus"></div>
-          <div id="saltBox" style="display:none" class="salt-box">
-            <div class="salt-box-title">⚠️ SAVE YOUR SALT — You need this to reveal!</div>
-            <div class="salt-value" id="saltValue"></div>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-header"><div><div class="card-title">🔓 Reveal Answer</div><div class="card-sub">After commit deadline passes</div></div></div>
-        <div class="card-body">
-          <label>Bounty ID</label>
-          <input id="rBountyId" type="number" placeholder="1" min="1"/>
+          <input id="rId" type="number" placeholder="1" min="1"/>
           <label>Your Original Answer</label>
           <textarea id="rAnswer" placeholder="Must match your committed answer exactly..."></textarea>
           <label>Your Salt</label>
-          <input id="rSalt" placeholder="0x... (from when you committed)" class="mono"/>
-          <button class="btn btn-green" onclick="revealAnswer()">🔓 Reveal Answer</button>
+          <input id="rSalt" placeholder="0x... (saved when you committed)" class="mono"/>
+          <button class="btn btn-primary" onclick="revealAnswer()">Reveal Answer</button>
           <div id="revealStatus"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Reveal Rules</div></div></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:14px">
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">✓ &nbsp;Reveal only opens after the commit deadline</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">✓ &nbsp;Answer must match your commitment hash exactly</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">✓ &nbsp;You can only reveal once per bounty</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">✓ &nbsp;Unrevealed answers are not eligible for judging</div>
+          <div style="font-size:13px;color:var(--muted);line-height:1.6">✓ &nbsp;Reveal closes at the reveal deadline</div>
         </div>
       </div>
     </div>
@@ -287,198 +450,188 @@
 const CONTRACT_ADDRESS = "0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b";
 const ABI = [
   "function nextBountyId() view returns (uint256)",
-  "function getBounty(uint256) view returns (tuple(address owner, string title, string rubric, uint256 reward, uint256 submissionDeadline, uint256 revealDeadline, bool judged, bool finalized, uint256 submissionCount, uint256 winnerIndex, bytes aiReview))",
-  "function createBounty(string, string, uint256, uint256) payable returns (uint256)",
-  "function submitCommitment(uint256, bytes32)",
-  "function revealAnswer(uint256, string, bytes32)",
-  "function computeCommitment(string, bytes32, address, uint256) view returns (bytes32)",
-  "function judgeAll(uint256, bytes)",
-  "function finalizeWinner(uint256, uint256)",
+  "function getBounty(uint256) view returns (tuple(address owner,string title,string rubric,uint256 reward,uint256 submissionDeadline,uint256 revealDeadline,bool judged,bool finalized,uint256 submissionCount,uint256 winnerIndex,bytes aiReview))",
+  "function createBounty(string,string,uint256,uint256) payable returns (uint256)",
+  "function submitCommitment(uint256,bytes32)",
+  "function revealAnswer(uint256,string,bytes32)",
+  "function computeCommitment(string,bytes32,address,uint256) view returns (bytes32)",
+  "function finalizeWinner(uint256,uint256)",
 ];
-
 let provider, signer, contract, userAddress;
 
 async function connectWallet() {
   if (!window.ethereum) { alert("Install MetaMask!"); return; }
   try {
-    await window.ethereum.request({ method: "eth_requestAccounts" });
+    await window.ethereum.request({ method:"eth_requestAccounts" });
     try {
-      await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x7BB" }] });
+      await window.ethereum.request({ method:"wallet_switchEthereumChain", params:[{ chainId:"0x7BB" }] });
     } catch(e) {
-      await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{
-        chainId: "0x7BB", chainName: "Ritual Chain",
-        rpcUrls: ["https://rpc.ritualfoundation.org"],
-        nativeCurrency: { name: "CRAT", symbol: "CRAT", decimals: 18 }
+      await window.ethereum.request({ method:"wallet_addEthereumChain", params:[{
+        chainId:"0x7BB", chainName:"Ritual Chain",
+        rpcUrls:["https://rpc.ritualfoundation.org"],
+        nativeCurrency:{ name:"CRAT", symbol:"CRAT", decimals:18 }
       }] });
     }
     provider = new ethers.BrowserProvider(window.ethereum);
     signer = await provider.getSigner();
     userAddress = await signer.getAddress();
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-    document.getElementById("walletSection").innerHTML = `<div id="walletInfo">✓ ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
+    document.getElementById("walletSection").innerHTML =
+      `<div id="walletInfo">● ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
     loadBounties();
   } catch(e) { console.error(e); }
 }
 
 async function loadBounties() {
-  if (!contract) { return; }
-  const list = document.getElementById("bountyList");
-  list.innerHTML = '<p style="color:var(--muted);font-size:13px"><span class="spinner"></span>Loading...</p>';
+  if (!contract) return;
+  const el = document.getElementById("bountyList");
+  el.innerHTML = '<p style="color:var(--muted);font-size:13px"><span class="spinner spinner-white"></span>Loading...</p>';
   try {
-    const nextId = await contract.nextBountyId();
-    if (nextId == 1n) { list.innerHTML = '<p style="color:var(--muted);font-size:13px">No bounties yet. Create one!</p>'; return; }
-    list.innerHTML = "";
-    for (let i = 1; i < nextId; i++) {
+    const next = await contract.nextBountyId();
+    if (next == 1n) { el.innerHTML = '<p style="color:var(--muted);font-size:13px">No bounties yet. Create one!</p>'; return; }
+    el.innerHTML = "";
+    for (let i = 1; i < next; i++) {
       const b = await contract.getBounty(i);
-      const now = Date.now() / 1000;
-      const subDL = Number(b.submissionDeadline);
-      const revDL = Number(b.revealDeadline);
-      let status = "🟢 Commit Phase";
-      let badgeClass = "badge-green";
-      if (b.finalized) { status = "✅ Finalized"; badgeClass = "badge-purple"; }
-      else if (b.judged) { status = "🤖 Judged"; badgeClass = "badge-purple"; }
-      else if (now > revDL) { status = "⏳ Ready to Judge"; badgeClass = "badge-amber"; }
-      else if (now > subDL) { status = "🔓 Reveal Phase"; badgeClass = "badge-amber"; }
-      const reward = ethers.formatEther(b.reward);
+      const now = Date.now()/1000;
+      let status="Commit Phase", badge="badge-green";
+      if (b.finalized) { status="Finalized"; badge="badge-muted"; }
+      else if (b.judged) { status="Judged"; badge="badge-muted"; }
+      else if (now > Number(b.revealDeadline)) { status="Ready to Judge"; badge="badge-amber"; }
+      else if (now > Number(b.submissionDeadline)) { status="Reveal Phase"; badge="badge-amber"; }
       const div = document.createElement("div");
       div.className = "bounty-item";
       div.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-          <div class="bounty-title">#${i} ${b.title}</div>
-          <span class="badge ${badgeClass}">${status}</span>
+          <div class="bounty-title">#${i} — ${b.title}</div>
+          <span class="badge ${badge}">${status}</span>
         </div>
         <div class="bounty-meta">
-          <span>💰 ${reward} CRAT</span>
-          <span>📝 ${b.submissionCount} commits</span>
-          <span>📅 Commit: ${new Date(subDL*1000).toLocaleString()}</span>
+          <span>${ethers.formatEther(b.reward)} RITUAL</span>
+          <span>${b.submissionCount} commits</span>
+          <span>Commit: ${new Date(Number(b.submissionDeadline)*1000).toLocaleDateString()}</span>
         </div>`;
-      div.onclick = () => showBountyDetail(i, b, status, badgeClass);
-      list.appendChild(div);
+      div.onclick = (e) => showDetail(i, b, status, badge, e.currentTarget);
+      el.appendChild(div);
     }
-  } catch(e) { list.innerHTML = `<p style="color:var(--red);font-size:13px">Error: ${e.message}</p>`; }
+  } catch(e) { el.innerHTML = `<p style="color:var(--red);font-size:13px">Error: ${e.message}</p>`; }
 }
 
-async function showBountyDetail(id, b, status, badgeClass) {
-  document.querySelectorAll(".bounty-item").forEach(el => el.classList.remove("selected"));
-  event.currentTarget.classList.add("selected");
-  document.getElementById("bountyDetailCard").style.display = "block";
-  document.getElementById("detailTitle").textContent = `#${id} ${b.title}`;
-  document.getElementById("detailSub").textContent = `Owner: ${b.owner.slice(0,6)}...${b.owner.slice(-4)}`;
-  document.getElementById("detailBadge").className = `badge ${badgeClass}`;
-  document.getElementById("detailBadge").textContent = status;
-  document.getElementById("detailReward").textContent = ethers.formatEther(b.reward) + " CRAT";
-  document.getElementById("detailSubDL").textContent = new Date(Number(b.submissionDeadline)*1000).toLocaleString();
-  document.getElementById("detailRevDL").textContent = new Date(Number(b.revealDeadline)*1000).toLocaleString();
-  document.getElementById("detailCount").textContent = b.submissionCount.toString();
-  document.getElementById("detailRubric").textContent = b.rubric;
-
-  const now = Date.now() / 1000;
-  const subDL = Number(b.submissionDeadline);
-  const revDL = Number(b.revealDeadline);
+function showDetail(id, b, status, badge, el) {
+  document.querySelectorAll(".bounty-item").forEach(x => x.classList.remove("selected"));
+  el.classList.add("selected");
+  const card = document.getElementById("detailCard");
+  card.style.display = "block";
+  document.getElementById("dTitle").textContent = `#${id} — ${b.title}`;
+  document.getElementById("dOwner").textContent = `Owner: ${b.owner.slice(0,6)}...${b.owner.slice(-4)}`;
+  document.getElementById("dBadge").className = `badge ${badge}`;
+  document.getElementById("dBadge").textContent = status;
+  document.getElementById("dReward").textContent = ethers.formatEther(b.reward) + " RITUAL";
+  document.getElementById("dCount").textContent = b.submissionCount.toString();
+  document.getElementById("dSubDL").textContent = new Date(Number(b.submissionDeadline)*1000).toLocaleString();
+  document.getElementById("dRevDL").textContent = new Date(Number(b.revealDeadline)*1000).toLocaleString();
+  document.getElementById("dRubric").textContent = b.rubric;
+  const now = Date.now()/1000;
   const isOwner = userAddress && b.owner.toLowerCase() === userAddress.toLowerCase();
   let actions = "";
-  if (!b.judged && !b.finalized && now < subDL) {
-    actions = `<div class="status status-info">🔒 Commit phase open — go to Participate tab to submit!</div>`;
-  } else if (!b.judged && !b.finalized && now >= subDL && now < revDL) {
-    actions = `<div class="status status-warning">🔓 Reveal phase open — go to Participate tab to reveal!</div>`;
-  } else if (!b.judged && !b.finalized && now >= revDL && isOwner) {
-    actions = `<button class="btn btn-amber" onclick="judgeAll(${id})">🤖 Judge All (Owner Only)</button>`;
-  } else if (b.judged && !b.finalized && isOwner) {
-    actions = `<label>Winner Index</label><input id="winnerIdx" type="number" min="0" placeholder="0"/><button class="btn btn-green" onclick="finalizeWinner(${id})">🏆 Finalize Winner</button>`;
-  } else if (b.finalized) {
-    actions = `<div class="status status-success">🎉 Bounty finalized! Winner: submission #${b.winnerIndex}</div>`;
-  }
-  document.getElementById("detailActions").innerHTML = actions;
-  document.getElementById("bountyDetailCard").scrollIntoView({behavior:"smooth", block:"nearest"});
+  if (!b.judged && !b.finalized && now < Number(b.submissionDeadline))
+    actions = `<div class="status status-success">Commit phase open — go to Commit tab to participate.</div>`;
+  else if (!b.judged && !b.finalized && now < Number(b.revealDeadline))
+    actions = `<div class="status status-warning">Reveal phase open — go to Reveal tab.</div>`;
+  else if (!b.judged && !b.finalized && now >= Number(b.revealDeadline) && isOwner)
+    actions = `<div class="status status-info">Reveal phase closed. judgeAll() must be called via contract directly on Ritual Chain.</div>`;
+  else if (b.judged && !b.finalized && isOwner)
+    actions = `<label>Winner Index (0-based)</label><input id="wIdx" type="number" min="0" placeholder="0" style="margin-bottom:10px"/><button class="btn btn-primary" onclick="finalizeWinner(${id})">Finalize Winner</button>`;
+  else if (b.finalized)
+    actions = `<div class="status status-success">Bounty finalized. Winner: submission #${b.winnerIndex}.</div>`;
+  else
+    actions = `<div class="status status-info">Waiting for reveal deadline to pass.</div>`;
+  document.getElementById("dActions").innerHTML = actions;
+  card.scrollIntoView({ behavior:"smooth", block:"nearest" });
 }
 
 async function createBounty() {
   if (!contract) { alert("Connect wallet first!"); return; }
   const title = document.getElementById("cTitle").value.trim();
   const rubric = document.getElementById("cRubric").value.trim();
-  const subDL = Math.floor(new Date(document.getElementById("cSubDL").value).getTime() / 1000);
-  const revDL = Math.floor(new Date(document.getElementById("cRevDL").value).getTime() / 1000);
+  const subDL = Math.floor(new Date(document.getElementById("cSubDL").value).getTime()/1000);
+  const revDL = Math.floor(new Date(document.getElementById("cRevDL").value).getTime()/1000);
   const reward = document.getElementById("cReward").value;
-  if (!title || !rubric || !subDL || !revDL || !reward) { alert("Fill all fields!"); return; }
-  const status = document.getElementById("createStatus");
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating bounty...</div>';
+  if (!title||!rubric||!subDL||!revDL||!reward) { alert("Fill all fields!"); return; }
+  const st = document.getElementById("createStatus");
+  st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sending transaction...</div>';
   try {
     const tx = await contract.createBounty(title, rubric, subDL, revDL, { value: ethers.parseEther(reward) });
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
-    const receipt = await tx.wait();
-    status.innerHTML = `<div class="status status-success">✅ Bounty created! Tx: ${receipt.hash.slice(0,10)}...</div>`;
+    st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Confirming...</div>';
+    const r = await tx.wait();
+    st.innerHTML = `<div class="status status-success">✓ Bounty created! Tx: ${r.hash.slice(0,10)}...</div>`;
     loadBounties();
-  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+  } catch(e) { st.innerHTML = `<div class="status status-error">${e.reason||e.message}</div>`; }
 }
 
 async function submitCommitment() {
   if (!contract) { alert("Connect wallet first!"); return; }
-  const bountyId = document.getElementById("pBountyId").value;
+  const bountyId = document.getElementById("pId").value;
   const answer = document.getElementById("pAnswer").value.trim();
-  if (!bountyId || !answer) { alert("Fill all fields!"); return; }
+  if (!bountyId||!answer) { alert("Fill all fields!"); return; }
   const salt = ethers.hexlify(ethers.randomBytes(32));
   const commitment = await contract.computeCommitment(answer, salt, userAddress, bountyId);
-  const status = document.getElementById("commitStatus");
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting commitment...</div>';
+  const st = document.getElementById("commitStatus");
+  st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting commitment...</div>';
   try {
     const tx = await contract.submitCommitment(bountyId, commitment);
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Confirming...</div>';
     await tx.wait();
-    status.innerHTML = '<div class="status status-success">✅ Commitment submitted! Save your salt below.</div>';
+    st.innerHTML = '<div class="status status-success">✓ Commitment submitted. Save your salt below!</div>';
     document.getElementById("saltBox").style.display = "block";
-    document.getElementById("saltValue").textContent = salt;
+    document.getElementById("saltVal").textContent = salt;
     document.getElementById("pAnswer").value = "";
-  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+  } catch(e) { st.innerHTML = `<div class="status status-error">Error: ${e.reason||e.message}</div>`; }
 }
 
 async function revealAnswer() {
   if (!contract) { alert("Connect wallet first!"); return; }
-  const bountyId = document.getElementById("rBountyId").value;
+  const id = document.getElementById("rId").value;
   const answer = document.getElementById("rAnswer").value.trim();
   const salt = document.getElementById("rSalt").value.trim();
-  if (!bountyId || !answer || !salt) { alert("Fill all fields!"); return; }
-  const status = document.getElementById("revealStatus");
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Revealing answer...</div>';
+  if (!id||!answer||!salt) { alert("Fill all fields!"); return; }
+  const st = document.getElementById("revealStatus");
+  st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Revealing answer...</div>';
   try {
-    const tx = await contract.revealAnswer(bountyId, answer, salt);
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    const tx = await contract.revealAnswer(id, answer, salt);
+    st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Confirming...</div>';
     await tx.wait();
-    status.innerHTML = '<div class="status status-success">✅ Answer revealed! You are now eligible for judging.</div>';
-  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+    st.innerHTML = '<div class="status status-success">✓ Answer revealed! You are now eligible for judging.</div>';
+  } catch(e) { st.innerHTML = `<div class="status status-error">Error: ${e.reason||e.message}</div>`; }
 }
 
-async function judgeAll(bountyId) {
-  alert("judgeAll requires a Ritual LLM payload — please use the full frontend or call directly via the contract.");
-}
-
-async function finalizeWinner(bountyId) {
-  if (!contract) return;
-  const idx = document.getElementById("winnerIdx").value;
-  const status = document.getElementById("detailActions");
+async function finalizeWinner(id) {
+  const idx = document.getElementById("wIdx")?.value;
+  if (!idx && idx !== "0") { alert("Enter winner index"); return; }
   try {
-    const tx = await contract.finalizeWinner(bountyId, idx);
+    const tx = await contract.finalizeWinner(id, idx);
     await tx.wait();
     alert("Winner finalized!");
     loadBounties();
-  } catch(e) { alert("Error: " + (e.reason || e.message)); }
+  } catch(e) { alert(e.reason||e.message); }
 }
 
-function showTab(tab) {
-  ["bounties","create","participate"].forEach(t => {
-    document.getElementById("tab-" + t).style.display = t === tab ? "" : "none";
+function showTab(t) {
+  ["browse","create","commit","reveal"].forEach(x => {
+    document.getElementById("tab-"+x).style.display = x===t?"":"none";
   });
-  document.querySelectorAll(".tab").forEach((el, i) => {
-    el.classList.toggle("active", ["bounties","create","participate"][i] === tab);
+  document.querySelectorAll(".tab").forEach((el,i) => {
+    el.classList.toggle("active", ["browse","create","commit","reveal"][i]===t);
   });
+  const phases = ["ph0","ph1","ph2","ph3","ph4"];
+  const active = {"browse":0,"create":0,"commit":1,"reveal":2}[t] ?? 0;
+  phases.forEach((p,i) => document.getElementById(p).classList.toggle("active", i===active));
 }
 
 // Set default deadlines
 const now = new Date();
-const sub = new Date(now.getTime() + 60*60*1000);
-const rev = new Date(now.getTime() + 2*60*60*1000);
 const fmt = d => d.toISOString().slice(0,16);
-document.getElementById("cSubDL").value = fmt(sub);
-document.getElementById("cRevDL").value = fmt(rev);
+document.getElementById("cSubDL").value = fmt(new Date(now.getTime()+3600000));
+document.getElementById("cRevDL").value = fmt(new Date(now.getTime()+7200000));
 </script>
 </body>
 </html>
