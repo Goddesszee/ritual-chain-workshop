@@ -417,10 +417,16 @@ async function createBounty() {
   if (!contract) { alert("Connect wallet first!"); return; }
   const title = document.getElementById("cTitle").value.trim();
   const rubric = document.getElementById("cRubric").value.trim();
-  const subDL = Math.floor(new Date(document.getElementById("cSubDL").value).getTime() / 1000);
-  const revDL = Math.floor(new Date(document.getElementById("cRevDL").value).getTime() / 1000);
+  const subDLRaw = document.getElementById("cSubDL").value; // "YYYY-MM-DDTHH:mm"
+  const revDLRaw = document.getElementById("cRevDL").value;
+  const subDL = Math.floor(new Date(subDLRaw).getTime() / 1000);
+  const revDL = Math.floor(new Date(revDLRaw).getTime() / 1000);
   const reward = document.getElementById("cReward").value;
+  const nowSec = Math.floor(Date.now() / 1000);
+  console.log("now:", nowSec, "subDL:", subDL, "revDL:", revDL);
   if (!title || !rubric || !subDL || !revDL || !reward) { alert("Fill all fields!"); return; }
+  if (subDL <= nowSec) { alert("Commit deadline must be in the future! nowUTC=" + new Date().toUTCString()); return; }
+  if (revDL <= subDL) { alert("Reveal deadline must be after commit deadline!"); return; }
   const status = document.getElementById("createStatus");
   status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating bounty...</div>';
   try {
