@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
 import aiJudgeAbi from "@/abi/AIJudge";
-import { contractAddress, executorAddress } from "@/config/contract";
+import { contractAddress } from "@/config/contract";
 import { ritualChain } from "@/config/wagmi";
 import type { Bounty } from "@/lib/bounty";
 import { buildJudgeAllLlmInput, type JudgeSubmission } from "@/lib/ritualLlm";
@@ -14,6 +14,8 @@ import { Card, CardHeader, CardBody, Button, TxStatus, Notice, Spinner } from "@
 import { useNow } from "@/hooks/useNow";
 
 const explorerBase = ritualChain.blockExplorers?.default.url;
+
+const FALLBACK_EXECUTOR = "0x0000000000000000000000000000000000000000" as `0x${string}`;
 
 export function JudgeAll({
   bountyId,
@@ -37,9 +39,8 @@ export function JudgeAll({
   const walletStatus = useRitualWalletStatus(address);
 
   const count = Number(bounty.submissionCount);
-
-  // Only show after reveal deadline has passed, owner only, not yet judged
   const revealDeadlinePassed = Number(bounty.revealDeadline) <= nowSec;
+
   if (!isOwner || bounty.judged || bounty.finalized || count === 0 || !revealDeadlinePassed) {
     return null;
   }
@@ -49,7 +50,6 @@ export function JudgeAll({
     setGatherError(null);
     setGathering(true);
     try {
-      // Fetch only REVEALED answers for batch judging
       const [submitters, answers] = await publicClient.readContract({
         address: contractAddress,
         abi: aiJudgeAbi,
@@ -69,8 +69,10 @@ export function JudgeAll({
         answer: answers[i],
       }));
 
+      const executorAddr = (process.env.NEXT_PUBLIC_EXECUTOR_ADDRESS as `0x${string}` | undefined) ?? FALLBACK_EXECUTOR;
+
       const llmInput = buildJudgeAllLlmInput({
-        executorAddress,
+        executorAddress: executorAddr,
         title: bounty.title,
         rubric: bounty.rubric,
         submissions,
@@ -106,14 +108,10 @@ export function JudgeAll({
       />
       <CardBody className="space-y-3">
         <Notice tone="indigo">AI review is advisory. The bounty owner finalizes the winner.</Notice>
-
         <RitualWalletPanel status={walletStatus} onDeposited={walletStatus.refetch} />
-
         <Button onClick={handleJudge} disabled={busy || !fundingReady} className="w-full">
           {gathering ? (
-            <>
-              <Spinner /> Loading revealed answers…
-            </>
+            <><Spinner /> Loading revealed answers…</>
           ) : tx.isBusy ? (
             "Judging…"
           ) : !fundingReady ? (
