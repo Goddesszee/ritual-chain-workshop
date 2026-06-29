@@ -755,7 +755,10 @@ function renderHQListUpdated() {
       <div class="grid">
         <div class="card" id="hostSetupCard">
           <div class="card-header">
-            <div><div class="card-title">🎙️ Create Quiz Room</div></div>
+            <div>
+              <div class="card-title">🎙️ Create Quiz Room</div>
+              <div class="card-sub">AI auto-searches Ritual docs, Twitter, GitHub to generate questions</div>
+            </div>
             <button onclick="selectRole(null)" class="btn btn-outline btn-sm">← Back</button>
           </div>
           <div class="card-body">
@@ -771,9 +774,8 @@ function renderHQListUpdated() {
             </select>
             <label>Seconds per question</label>
             <input id="hTimer" type="number" value="30" min="10" max="120"/>
-            <label>AI Context (paste Ritual docs here)</label>
-            <textarea id="hContext" rows="6" placeholder="Paste Ritual documentation, whitepaper excerpts, or any reference the AI should use when scoring answers..."></textarea>
-            <div class="hint">The AI will use this to accurately score player answers.</div>
+            <!-- AI searches docs automatically - no need to paste -->
+            <input type="hidden" id="hContext" value=""/>
             <button class="btn btn-primary" onclick="createQuizRoom()">Create Room 🚀</button>
             <div id="hostSetupStatus"></div>
           </div>
