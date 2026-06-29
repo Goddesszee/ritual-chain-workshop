@@ -560,6 +560,17 @@ async function aiGenerateQuestions() {
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Searching & generating...';
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Loading AI config...</div>';
+
+  // Fetch OpenAI key from server
+  const aiKey = await getOpenAIKey();
+  if (!aiKey) {
+    status.innerHTML = '<div class="status status-error">AI key not configured. Check Vercel environment variables.</div>';
+    btn.disabled = false; btn.innerHTML = "Auto-Search & Generate Questions";
+    return;
+  }
+  window._oaiKey = aiKey;
+
   status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 1: AI searching ' + sources.length + ' sources for ' + topicLabel + '...</div>';
 
   try {
@@ -2117,6 +2128,17 @@ async function aiGenerateQuestions() {
 
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Searching & generating...';
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Loading AI config...</div>';
+
+  // Fetch OpenAI key from server
+  const aiKey = await getOpenAIKey();
+  if (!aiKey) {
+    status.innerHTML = '<div class="status status-error">AI key not configured. Check Vercel environment variables.</div>';
+    btn.disabled = false; btn.innerHTML = "Auto-Search & Generate Questions";
+    return;
+  }
+  window._oaiKey = aiKey;
+
   status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 1: AI searching ' + sources.length + ' sources for ' + topicLabel + '...</div>';
 
   try {
