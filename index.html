@@ -159,10 +159,25 @@ async function hostShowScores(){
     const sorted=result.scores.sort((a,b)=>b.score-a.score);
     const medals=["🥇","🥈","🥉"];
     document.getElementById("hScores").innerHTML=sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:var(--purple-light)">${s.score}/100</div></div>`).join('');
+    // Score on-chain
+    try {
+      const scoreTx = await quizContract.scoreRound(qRoomCode, qIdx);
+      await scoreTx.wait();
+    } catch(e) { console.log("scoreRound error:", e.message); }
+
     const hasMore=qIdx<qRoomData.questions.length-1;
     document.getElementById("hNextBtn").style.display=hasMore?"":"none";
     document.getElementById("hStartBtn").style.display=hasMore?"":"none";
-    if(!hasMore){qRoomData.state="finished";saveR(qRoomData);document.getElementById("hStatus").textContent="Quiz complete!";}
+    if(!hasMore){
+      qRoomData.state="finished";
+      saveR(qRoomData);
+      document.getElementById("hStatus").textContent="Quiz complete! Finalizing...";
+      try {
+        const finTx = await quizContract.finalizeRoom(qRoomCode);
+        await finTx.wait();
+        document.getElementById("hStatus").textContent="✅ Quiz finalized! Winner paid on-chain.";
+      } catch(e) { console.log("finalize error:", e.message); }
+    }
   } catch(e){
     document.getElementById("hScores").innerHTML='<div class="status status-error">Error: '+e.message+'</div>';
     document.getElementById("hNextBtn").style.display="";
@@ -574,22 +589,45 @@ Return JSON only (no markdown, no backticks):
     if (!jsonMatch) throw new Error("Could not parse AI response");
     const result = JSON.parse(jsonMatch[0]);
 
-    // Add to room
+    // Add questions on-chain with real MCQ options
     let added = 0;
-    result.questions.forEach(q => {
-      qRoomData.questions.push({
-        q: q.q,
-        modelAnswer: q.modelAnswer,
-        difficulty: q.difficulty,
-        source: q.source
-      });
-      added++;
-    });
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding ' + result.questions.length + ' questions to blockchain...</div>';
+
+    for (const q of result.questions) {
+      const opts = q.options || ["A. True", "B. False", "C. Maybe", "D. None of above"];
+      // Strip letter prefix from options
+      const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/, '').trim());
+      try {
+        const tx = await quizContract.addQuestion(
+          qRoomCode,
+          q.q,
+          cleanOpts[0] || "True",
+          cleanOpts[1] || "False",
+          cleanOpts[2] || "Maybe",
+          cleanOpts[3] || "None of the above",
+          q.correct || "A",
+          q.explanation || q.modelAnswer || ""
+        );
+        await tx.wait();
+        qRoomData.questions.push({
+          q: q.q,
+          options: opts,
+          correct: q.correct || "A",
+          explanation: q.explanation || q.modelAnswer || "",
+          difficulty: q.difficulty,
+          source: q.source
+        });
+        added++;
+        status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Added ' + added + '/' + result.questions.length + ' questions on-chain...</div>';
+      } catch(e) {
+        console.error("Failed to add question:", e.message);
+      }
+    }
     saveR(qRoomData);
     renderHQList();
 
     const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
-    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated from live web search!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
+    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
 
   } catch(e) {
     // Fallback: generate from Claude's training knowledge
@@ -613,10 +651,19 @@ Return JSON only (no markdown, no backticks):
       if (fd.error) throw new Error(fd.error.message);
       const ft = fd.choices[0].message.content.replace(/\`\`\`json|\`\`\`/g,"").trim();
       const fr = JSON.parse(ft);
-      fr.questions.forEach(q => { qRoomData.questions.push({q:q.q,modelAnswer:q.modelAnswer,difficulty:q.difficulty}); });
+      status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding questions on-chain...</div>';
+      for (const q of fr.questions) {
+        const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
+        const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/,'').trim());
+        try {
+          const tx = await quizContract.addQuestion(qRoomCode, q.q, cleanOpts[0]||"True", cleanOpts[1]||"False", cleanOpts[2]||"Maybe", cleanOpts[3]||"None", q.correct||"A", q.modelAnswer||"");
+          await tx.wait();
+          qRoomData.questions.push({q:q.q,options:opts,correct:q.correct||"A",difficulty:q.difficulty});
+        } catch(e) { console.error(e.message); }
+      }
       saveR(qRoomData);
       renderHQList();
-      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions generated from AI knowledge!</div>';
+      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions added on-chain!</div>';
     } catch(e2) {
       status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
     }
@@ -1623,10 +1670,25 @@ async function hostShowScores(){
     const sorted=result.scores.sort((a,b)=>b.score-a.score);
     const medals=["🥇","🥈","🥉"];
     document.getElementById("hScores").innerHTML=sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:var(--purple-light)">${s.score}/100</div></div>`).join('');
+    // Score on-chain
+    try {
+      const scoreTx = await quizContract.scoreRound(qRoomCode, qIdx);
+      await scoreTx.wait();
+    } catch(e) { console.log("scoreRound error:", e.message); }
+
     const hasMore=qIdx<qRoomData.questions.length-1;
     document.getElementById("hNextBtn").style.display=hasMore?"":"none";
     document.getElementById("hStartBtn").style.display=hasMore?"":"none";
-    if(!hasMore){qRoomData.state="finished";saveR(qRoomData);document.getElementById("hStatus").textContent="Quiz complete!";}
+    if(!hasMore){
+      qRoomData.state="finished";
+      saveR(qRoomData);
+      document.getElementById("hStatus").textContent="Quiz complete! Finalizing...";
+      try {
+        const finTx = await quizContract.finalizeRoom(qRoomCode);
+        await finTx.wait();
+        document.getElementById("hStatus").textContent="✅ Quiz finalized! Winner paid on-chain.";
+      } catch(e) { console.log("finalize error:", e.message); }
+    }
   } catch(e){
     document.getElementById("hScores").innerHTML='<div class="status status-error">Error: '+e.message+'</div>';
     document.getElementById("hNextBtn").style.display="";
@@ -2038,22 +2100,45 @@ Return JSON only (no markdown, no backticks):
     if (!jsonMatch) throw new Error("Could not parse AI response");
     const result = JSON.parse(jsonMatch[0]);
 
-    // Add to room
+    // Add questions on-chain with real MCQ options
     let added = 0;
-    result.questions.forEach(q => {
-      qRoomData.questions.push({
-        q: q.q,
-        modelAnswer: q.modelAnswer,
-        difficulty: q.difficulty,
-        source: q.source
-      });
-      added++;
-    });
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding ' + result.questions.length + ' questions to blockchain...</div>';
+
+    for (const q of result.questions) {
+      const opts = q.options || ["A. True", "B. False", "C. Maybe", "D. None of above"];
+      // Strip letter prefix from options
+      const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/, '').trim());
+      try {
+        const tx = await quizContract.addQuestion(
+          qRoomCode,
+          q.q,
+          cleanOpts[0] || "True",
+          cleanOpts[1] || "False",
+          cleanOpts[2] || "Maybe",
+          cleanOpts[3] || "None of the above",
+          q.correct || "A",
+          q.explanation || q.modelAnswer || ""
+        );
+        await tx.wait();
+        qRoomData.questions.push({
+          q: q.q,
+          options: opts,
+          correct: q.correct || "A",
+          explanation: q.explanation || q.modelAnswer || "",
+          difficulty: q.difficulty,
+          source: q.source
+        });
+        added++;
+        status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Added ' + added + '/' + result.questions.length + ' questions on-chain...</div>';
+      } catch(e) {
+        console.error("Failed to add question:", e.message);
+      }
+    }
     saveR(qRoomData);
     renderHQList();
 
     const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
-    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated from live web search!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
+    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
 
   } catch(e) {
     // Fallback: generate from Claude's training knowledge
@@ -2077,10 +2162,19 @@ Return JSON only (no markdown, no backticks):
       if (fd.error) throw new Error(fd.error.message);
       const ft = fd.choices[0].message.content.replace(/\`\`\`json|\`\`\`/g,"").trim();
       const fr = JSON.parse(ft);
-      fr.questions.forEach(q => { qRoomData.questions.push({q:q.q,modelAnswer:q.modelAnswer,difficulty:q.difficulty}); });
+      status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding questions on-chain...</div>';
+      for (const q of fr.questions) {
+        const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
+        const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/,'').trim());
+        try {
+          const tx = await quizContract.addQuestion(qRoomCode, q.q, cleanOpts[0]||"True", cleanOpts[1]||"False", cleanOpts[2]||"Maybe", cleanOpts[3]||"None", q.correct||"A", q.modelAnswer||"");
+          await tx.wait();
+          qRoomData.questions.push({q:q.q,options:opts,correct:q.correct||"A",difficulty:q.difficulty});
+        } catch(e) { console.error(e.message); }
+      }
       saveR(qRoomData);
       renderHQList();
-      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions generated from AI knowledge!</div>';
+      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions added on-chain!</div>';
     } catch(e2) {
       status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
     }
