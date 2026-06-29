@@ -223,54 +223,134 @@ function showPScores(room){
 }
 
 
-// ── AI QUESTION GENERATOR ───────────────────────────────────────────
+// ── AI QUESTION GENERATOR WITH WEB SEARCH ──────────────────────────
+const TOPIC_SEARCHES = {
+  "ritual": [
+    "site:docs.ritualfoundation.org",
+    "site:github.com/ritual-net",
+    "Ritual Chain AI precompile LLM blockchain 2024 2025",
+    "ritualfoundation.org blog",
+    "@ritualnet twitter blockchain AI"
+  ],
+  "solidity": [
+    "site:docs.soliditylang.org",
+    "Solidity smart contract security best practices 2025",
+    "EVM opcodes gas optimization solidity",
+    "solidity patterns github"
+  ],
+  "defi": [
+    "DeFi protocol AMM liquidity pool 2025",
+    "Uniswap Aave Compound mechanics explained",
+    "decentralized finance yield farming stablecoins"
+  ],
+  "web3": [
+    "Web3 blockchain fundamentals ethereum 2025",
+    "proof of stake consensus mechanism explained",
+    "blockchain wallet private key transaction"
+  ],
+  "commit-reveal": [
+    "commit reveal scheme solidity blockchain",
+    "privacy blockchain keccak256 hash commitment",
+    "zero knowledge proof blockchain privacy 2025"
+  ],
+  "nft": [
+    "NFT ERC-721 ERC-1155 explained 2025",
+    "NFT marketplace royalties metadata blockchain",
+    "non-fungible token use cases"
+  ],
+  "layer2": [
+    "Layer 2 scaling optimistic rollups ZK rollups",
+    "Ethereum scaling solution bridge 2025",
+    "state channels plasma blockchain"
+  ]
+};
+
 async function aiGenerateQuestions() {
   const topic = document.getElementById("aiQTopic").value;
   const count = parseInt(document.getElementById("aiQCount").value) || 10;
-  const context = document.getElementById("hContext").value.trim();
+  const customTopic = document.getElementById("aiCustomTopic").value.trim();
   const btn = document.getElementById("aiGenBtn");
   const status = document.getElementById("aiGenStatus");
 
-  const topicNames = {
-    "ritual": "Ritual Chain, AI precompiles, LLM inference on-chain, TEE execution",
-    "solidity": "Solidity smart contracts, EVM, gas optimization, security patterns",
-    "defi": "DeFi protocols, AMMs, liquidity pools, yield farming, stablecoins",
-    "web3": "Web3, blockchain fundamentals, consensus mechanisms, wallets, transactions",
-    "commit-reveal": "Commit-reveal schemes, privacy on blockchain, zero knowledge proofs",
-    "nft": "NFTs, ERC-721, metadata, marketplaces, tokenization",
-    "layer2": "Layer 2 scaling, rollups, state channels, bridges",
-    "custom": context || "blockchain technology"
-  };
+  const srcDocs    = document.getElementById("srcDocs").checked;
+  const srcTwitter = document.getElementById("srcTwitter").checked;
+  const srcDiscord = document.getElementById("srcDiscord").checked;
+  const srcGithub  = document.getElementById("srcGithub").checked;
+  const srcBlog    = document.getElementById("srcBlog").checked;
+  const srcYoutube = document.getElementById("srcYoutube").checked;
+
+  const sources = [];
+  if (srcDocs)    sources.push("official documentation and whitepapers");
+  if (srcTwitter) sources.push("X/Twitter announcements and threads");
+  if (srcDiscord) sources.push("Discord community discussions");
+  if (srcGithub)  sources.push("GitHub repositories and READMEs");
+  if (srcBlog)    sources.push("blog posts and Medium articles");
+  if (srcYoutube) sources.push("YouTube tutorials and conference talks");
+
+  const topicLabel = topic === "custom" ? (customTopic || "blockchain") : {
+    "ritual": "Ritual Chain & AI Precompiles",
+    "solidity": "Solidity & Smart Contracts",
+    "defi": "DeFi Protocols",
+    "web3": "Web3 & Blockchain Fundamentals",
+    "commit-reveal": "Commit-Reveal & Privacy",
+    "nft": "NFTs & Tokenization",
+    "layer2": "Layer 2 & Scaling"
+  }[topic];
 
   btn.disabled = true;
-  btn.textContent = "Generating...";
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI is creating ' + count + ' questions on ' + topicNames[topic].split(",")[0] + '...</div>';
+  btn.innerHTML = '<span class="spinner"></span>Searching & generating...';
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 1: AI searching ' + sources.length + ' sources for ' + topicLabel + '...</div>';
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    // Step 1: Use Claude with web_search to find current info
+    const searchPrompt = topic === "ritual"
+      ? `Search for the latest information about Ritual Chain from these sources:
+- https://docs.ritualfoundation.org
+- https://twitter.com/ritualnet
+- https://github.com/ritual-net
+- Ritual Chain blog posts and announcements
+
+Find key facts, features, technical details, recent updates, and important concepts about Ritual Chain that would make good quiz questions.`
+      : `Search for current, accurate information about "${topicLabel}" in blockchain/Web3 from:
+${sources.map(s => "- " + s).join("\n")}
+
+Find key concepts, facts, technical details, and recent updates that would make good quiz questions.`;
+
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
+
+    // Step 2: Generate questions based on searched knowledge
+    const genResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 3000,
+        max_tokens: 4000,
+        tools: [{
+          type: "web_search_20250305",
+          name: "web_search"
+        }],
         messages: [{
           role: "user",
-          content: `You are a blockchain educator creating quiz questions.
+          content: `You are a blockchain quiz creator. Search the web to find current, accurate information about "${topicLabel}", then create ${count} quiz questions based on what you find.
 
-Topic: ${topicNames[topic]}
-${context ? "Additional context:\n" + context : ""}
+Search these specific sources:
+${topic === "ritual" ? `- https://docs.ritualfoundation.org (Ritual documentation)
+- Twitter/X posts from @ritualnet
+- GitHub: github.com/ritual-net
+- Ritual Chain blog and announcements
+- Recent news about Ritual Chain 2024 2025` : sources.map(s => "- " + s).join("\n")}
 
-Generate exactly ${count} quiz questions about the topic above.
-Questions should range from beginner to advanced.
-Each question should have a clear model answer.
+After searching, generate exactly ${count} quiz questions. Mix difficulty levels (easy/medium/hard). Base questions on REAL facts you found.
 
-Return JSON only, no markdown:
+Return JSON only (no markdown):
 {
+  "sourcesUsed": ["list of sources you found info from"],
   "questions": [
     {
-      "q": "question text here",
-      "modelAnswer": "concise model answer for AI scoring",
-      "difficulty": "easy|medium|hard"
+      "q": "question text",
+      "modelAnswer": "accurate answer based on what you found",
+      "difficulty": "easy|medium|hard",
+      "source": "where this fact came from"
     }
   ]
 }`
@@ -278,31 +358,71 @@ Return JSON only, no markdown:
       })
     });
 
-    const data = await response.json();
-    const text = data.content[0].text.replace(/\`\`\`json|\`\`\`/g, '').trim();
-    const result = JSON.parse(text);
+    const genData = await genResponse.json();
 
-    // Add generated questions to room
+    // Extract text from potentially multi-block response
+    const allText = (genData.content || [])
+      .filter(b => b.type === "text")
+      .map(b => b.text)
+      .join("\n");
+
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 3: Processing ' + count + ' questions...</div>';
+
+    // Parse JSON from response
+    const jsonMatch = allText.match(/\{[\s\S]*"questions"[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Could not parse AI response");
+    const result = JSON.parse(jsonMatch[0]);
+
+    // Add to room
     let added = 0;
     result.questions.forEach(q => {
       qRoomData.questions.push({
         q: q.q,
         modelAnswer: q.modelAnswer,
-        difficulty: q.difficulty
+        difficulty: q.difficulty,
+        source: q.source
       });
       added++;
     });
     saveR(qRoomData);
     renderHQList();
 
-    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated and added!</div>';
-    btn.disabled = false;
-    btn.textContent = "✨ Generate with AI";
+    const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
+    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated from live web search!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
+
   } catch(e) {
-    status.innerHTML = '<div class="status status-error">Error: ' + e.message + '</div>';
-    btn.disabled = false;
-    btn.textContent = "✨ Generate with AI";
+    // Fallback: generate from Claude's training knowledge
+    status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
+    try {
+      const fallback = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 3000,
+          messages: [{
+            role: "user",
+            content: `Generate ${count} quiz questions about "${topicLabel}" for a blockchain quiz. Include easy, medium and hard questions. Base questions on accurate technical knowledge.
+
+Return JSON only:
+{"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}`
+          }]
+        })
+      });
+      const fd = await fallback.json();
+      const ft = fd.content[0].text.replace(/\`\`\`json|\`\`\`/g,"").trim();
+      const fr = JSON.parse(ft);
+      fr.questions.forEach(q => { qRoomData.questions.push({q:q.q,modelAnswer:q.modelAnswer,difficulty:q.difficulty}); });
+      saveR(qRoomData);
+      renderHQList();
+      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions generated from AI knowledge!</div>';
+    } catch(e2) {
+      status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
+    }
   }
+
+  btn.disabled = false;
+  btn.innerHTML = "✨ Auto-Search & Generate Questions";
 }
 
 // Update renderHQList to show difficulty badges
@@ -319,6 +439,7 @@ function renderHQListUpdated() {
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
           ${q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0, 80) + (q.modelAnswer.length > 80 ? "..." : "") + '</div>' : ''}
+          ${q.source ? '<div style="font-size:10px;color:var(--muted2);margin-top:3px">🔗 ' + q.source.slice(0,60) + '</div>' : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
           ${q.difficulty ? '<span class="badge ' + (diffColors[q.difficulty] || "badge-muted") + '">' + q.difficulty + '</span>' : ''}
@@ -672,7 +793,8 @@ function renderHQListUpdated() {
             <!-- AI Generate Questions -->
             <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.3);border-radius:10px;padding:14px;margin-bottom:12px">
               <div style="font-size:12px;font-weight:700;color:var(--purple-light);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px">🤖 AI Generate Questions</div>
-              <select id="aiQTopic" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;outline:none;margin-bottom:8px">
+
+              <select id="aiQTopic" onchange="document.getElementById('aiCustomTopic').style.display=this.value==='custom'?'':'none'" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;outline:none;margin-bottom:8px">
                 <option value="ritual">Ritual Chain & AI Precompiles</option>
                 <option value="solidity">Solidity Smart Contracts</option>
                 <option value="defi">DeFi Protocols</option>
@@ -680,13 +802,40 @@ function renderHQListUpdated() {
                 <option value="commit-reveal">Commit-Reveal & Privacy</option>
                 <option value="nft">NFTs & Tokenization</option>
                 <option value="layer2">Layer 2 & Scaling</option>
-                <option value="custom">Custom (use context above)</option>
+                <option value="custom">Custom Topic</option>
               </select>
-              <div style="display:flex;gap:8px;align-items:center">
+
+              <input id="aiCustomTopic" placeholder="Custom topic (e.g. Ritual Genesis NFT, CCTP bridging...)" style="display:none;margin-bottom:8px"/>
+
+              <div style="display:flex;gap:8px;margin-bottom:8px">
                 <input id="aiQCount" type="number" value="10" min="3" max="20" style="width:80px;padding:8px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none"/>
-                <span style="font-size:12px;color:var(--muted)">questions</span>
-                <button onclick="aiGenerateQuestions()" class="btn btn-primary" style="margin-top:0;padding:8px 16px;width:auto;flex:1" id="aiGenBtn">✨ Generate with AI</button>
+                <span style="font-size:12px;color:var(--muted);display:flex;align-items:center">questions</span>
               </div>
+
+              <!-- Source checkboxes -->
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px">AI will search these sources:</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer">
+                  <input type="checkbox" id="srcDocs" checked style="width:14px;height:14px;accent-color:var(--purple)"/> 📚 Ritual Docs
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer">
+                  <input type="checkbox" id="srcTwitter" checked style="width:14px;height:14px;accent-color:var(--purple)"/> 🐦 X / Twitter
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer">
+                  <input type="checkbox" id="srcDiscord" checked style="width:14px;height:14px;accent-color:var(--purple)"/> 💬 Discord
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer">
+                  <input type="checkbox" id="srcGithub" checked style="width:14px;height:14px;accent-color:var(--purple)"/> 🐙 GitHub
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer">
+                  <input type="checkbox" id="srcBlog" checked style="width:14px;height:14px;accent-color:var(--purple)"/> 📝 Blog / Medium
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text);text-transform:none;letter-spacing:0;margin:0;cursor:pointer">
+                  <input type="checkbox" id="srcYoutube" style="width:14px;height:14px;accent-color:var(--purple)"/> 🎥 YouTube
+                </label>
+              </div>
+
+              <button onclick="aiGenerateQuestions()" class="btn btn-primary" style="margin-top:0;width:100%" id="aiGenBtn">✨ Auto-Search & Generate Questions</button>
               <div id="aiGenStatus" style="margin-top:8px"></div>
             </div>
 
@@ -1289,54 +1438,134 @@ function showPScores(room){
 }
 
 
-// ── AI QUESTION GENERATOR ───────────────────────────────────────────
+// ── AI QUESTION GENERATOR WITH WEB SEARCH ──────────────────────────
+const TOPIC_SEARCHES = {
+  "ritual": [
+    "site:docs.ritualfoundation.org",
+    "site:github.com/ritual-net",
+    "Ritual Chain AI precompile LLM blockchain 2024 2025",
+    "ritualfoundation.org blog",
+    "@ritualnet twitter blockchain AI"
+  ],
+  "solidity": [
+    "site:docs.soliditylang.org",
+    "Solidity smart contract security best practices 2025",
+    "EVM opcodes gas optimization solidity",
+    "solidity patterns github"
+  ],
+  "defi": [
+    "DeFi protocol AMM liquidity pool 2025",
+    "Uniswap Aave Compound mechanics explained",
+    "decentralized finance yield farming stablecoins"
+  ],
+  "web3": [
+    "Web3 blockchain fundamentals ethereum 2025",
+    "proof of stake consensus mechanism explained",
+    "blockchain wallet private key transaction"
+  ],
+  "commit-reveal": [
+    "commit reveal scheme solidity blockchain",
+    "privacy blockchain keccak256 hash commitment",
+    "zero knowledge proof blockchain privacy 2025"
+  ],
+  "nft": [
+    "NFT ERC-721 ERC-1155 explained 2025",
+    "NFT marketplace royalties metadata blockchain",
+    "non-fungible token use cases"
+  ],
+  "layer2": [
+    "Layer 2 scaling optimistic rollups ZK rollups",
+    "Ethereum scaling solution bridge 2025",
+    "state channels plasma blockchain"
+  ]
+};
+
 async function aiGenerateQuestions() {
   const topic = document.getElementById("aiQTopic").value;
   const count = parseInt(document.getElementById("aiQCount").value) || 10;
-  const context = document.getElementById("hContext").value.trim();
+  const customTopic = document.getElementById("aiCustomTopic").value.trim();
   const btn = document.getElementById("aiGenBtn");
   const status = document.getElementById("aiGenStatus");
 
-  const topicNames = {
-    "ritual": "Ritual Chain, AI precompiles, LLM inference on-chain, TEE execution",
-    "solidity": "Solidity smart contracts, EVM, gas optimization, security patterns",
-    "defi": "DeFi protocols, AMMs, liquidity pools, yield farming, stablecoins",
-    "web3": "Web3, blockchain fundamentals, consensus mechanisms, wallets, transactions",
-    "commit-reveal": "Commit-reveal schemes, privacy on blockchain, zero knowledge proofs",
-    "nft": "NFTs, ERC-721, metadata, marketplaces, tokenization",
-    "layer2": "Layer 2 scaling, rollups, state channels, bridges",
-    "custom": context || "blockchain technology"
-  };
+  const srcDocs    = document.getElementById("srcDocs").checked;
+  const srcTwitter = document.getElementById("srcTwitter").checked;
+  const srcDiscord = document.getElementById("srcDiscord").checked;
+  const srcGithub  = document.getElementById("srcGithub").checked;
+  const srcBlog    = document.getElementById("srcBlog").checked;
+  const srcYoutube = document.getElementById("srcYoutube").checked;
+
+  const sources = [];
+  if (srcDocs)    sources.push("official documentation and whitepapers");
+  if (srcTwitter) sources.push("X/Twitter announcements and threads");
+  if (srcDiscord) sources.push("Discord community discussions");
+  if (srcGithub)  sources.push("GitHub repositories and READMEs");
+  if (srcBlog)    sources.push("blog posts and Medium articles");
+  if (srcYoutube) sources.push("YouTube tutorials and conference talks");
+
+  const topicLabel = topic === "custom" ? (customTopic || "blockchain") : {
+    "ritual": "Ritual Chain & AI Precompiles",
+    "solidity": "Solidity & Smart Contracts",
+    "defi": "DeFi Protocols",
+    "web3": "Web3 & Blockchain Fundamentals",
+    "commit-reveal": "Commit-Reveal & Privacy",
+    "nft": "NFTs & Tokenization",
+    "layer2": "Layer 2 & Scaling"
+  }[topic];
 
   btn.disabled = true;
-  btn.textContent = "Generating...";
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI is creating ' + count + ' questions on ' + topicNames[topic].split(",")[0] + '...</div>';
+  btn.innerHTML = '<span class="spinner"></span>Searching & generating...';
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 1: AI searching ' + sources.length + ' sources for ' + topicLabel + '...</div>';
 
   try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
+    // Step 1: Use Claude with web_search to find current info
+    const searchPrompt = topic === "ritual"
+      ? `Search for the latest information about Ritual Chain from these sources:
+- https://docs.ritualfoundation.org
+- https://twitter.com/ritualnet
+- https://github.com/ritual-net
+- Ritual Chain blog posts and announcements
+
+Find key facts, features, technical details, recent updates, and important concepts about Ritual Chain that would make good quiz questions.`
+      : `Search for current, accurate information about "${topicLabel}" in blockchain/Web3 from:
+${sources.map(s => "- " + s).join("\n")}
+
+Find key concepts, facts, technical details, and recent updates that would make good quiz questions.`;
+
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
+
+    // Step 2: Generate questions based on searched knowledge
+    const genResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 3000,
+        max_tokens: 4000,
+        tools: [{
+          type: "web_search_20250305",
+          name: "web_search"
+        }],
         messages: [{
           role: "user",
-          content: `You are a blockchain educator creating quiz questions.
+          content: `You are a blockchain quiz creator. Search the web to find current, accurate information about "${topicLabel}", then create ${count} quiz questions based on what you find.
 
-Topic: ${topicNames[topic]}
-${context ? "Additional context:\n" + context : ""}
+Search these specific sources:
+${topic === "ritual" ? `- https://docs.ritualfoundation.org (Ritual documentation)
+- Twitter/X posts from @ritualnet
+- GitHub: github.com/ritual-net
+- Ritual Chain blog and announcements
+- Recent news about Ritual Chain 2024 2025` : sources.map(s => "- " + s).join("\n")}
 
-Generate exactly ${count} quiz questions about the topic above.
-Questions should range from beginner to advanced.
-Each question should have a clear model answer.
+After searching, generate exactly ${count} quiz questions. Mix difficulty levels (easy/medium/hard). Base questions on REAL facts you found.
 
-Return JSON only, no markdown:
+Return JSON only (no markdown):
 {
+  "sourcesUsed": ["list of sources you found info from"],
   "questions": [
     {
-      "q": "question text here",
-      "modelAnswer": "concise model answer for AI scoring",
-      "difficulty": "easy|medium|hard"
+      "q": "question text",
+      "modelAnswer": "accurate answer based on what you found",
+      "difficulty": "easy|medium|hard",
+      "source": "where this fact came from"
     }
   ]
 }`
@@ -1344,31 +1573,71 @@ Return JSON only, no markdown:
       })
     });
 
-    const data = await response.json();
-    const text = data.content[0].text.replace(/\`\`\`json|\`\`\`/g, '').trim();
-    const result = JSON.parse(text);
+    const genData = await genResponse.json();
 
-    // Add generated questions to room
+    // Extract text from potentially multi-block response
+    const allText = (genData.content || [])
+      .filter(b => b.type === "text")
+      .map(b => b.text)
+      .join("\n");
+
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 3: Processing ' + count + ' questions...</div>';
+
+    // Parse JSON from response
+    const jsonMatch = allText.match(/\{[\s\S]*"questions"[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("Could not parse AI response");
+    const result = JSON.parse(jsonMatch[0]);
+
+    // Add to room
     let added = 0;
     result.questions.forEach(q => {
       qRoomData.questions.push({
         q: q.q,
         modelAnswer: q.modelAnswer,
-        difficulty: q.difficulty
+        difficulty: q.difficulty,
+        source: q.source
       });
       added++;
     });
     saveR(qRoomData);
     renderHQList();
 
-    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated and added!</div>';
-    btn.disabled = false;
-    btn.textContent = "✨ Generate with AI";
+    const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
+    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated from live web search!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
+
   } catch(e) {
-    status.innerHTML = '<div class="status status-error">Error: ' + e.message + '</div>';
-    btn.disabled = false;
-    btn.textContent = "✨ Generate with AI";
+    // Fallback: generate from Claude's training knowledge
+    status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
+    try {
+      const fallback = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 3000,
+          messages: [{
+            role: "user",
+            content: `Generate ${count} quiz questions about "${topicLabel}" for a blockchain quiz. Include easy, medium and hard questions. Base questions on accurate technical knowledge.
+
+Return JSON only:
+{"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}`
+          }]
+        })
+      });
+      const fd = await fallback.json();
+      const ft = fd.content[0].text.replace(/\`\`\`json|\`\`\`/g,"").trim();
+      const fr = JSON.parse(ft);
+      fr.questions.forEach(q => { qRoomData.questions.push({q:q.q,modelAnswer:q.modelAnswer,difficulty:q.difficulty}); });
+      saveR(qRoomData);
+      renderHQList();
+      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions generated from AI knowledge!</div>';
+    } catch(e2) {
+      status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
+    }
   }
+
+  btn.disabled = false;
+  btn.innerHTML = "✨ Auto-Search & Generate Questions";
 }
 
 // Update renderHQList to show difficulty badges
@@ -1385,6 +1654,7 @@ function renderHQListUpdated() {
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
           ${q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0, 80) + (q.modelAnswer.length > 80 ? "..." : "") + '</div>' : ''}
+          ${q.source ? '<div style="font-size:10px;color:var(--muted2);margin-top:3px">🔗 ' + q.source.slice(0,60) + '</div>' : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
           ${q.difficulty ? '<span class="badge ' + (diffColors[q.difficulty] || "badge-muted") + '">' + q.difficulty + '</span>' : ''}
