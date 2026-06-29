@@ -64,7 +64,7 @@ function addQ() {
   renderHQList();
 }
 
-function renderHQList() {
+function renderHQList() { renderHQListUpdated(); } function _renderHQListOld() {
   const el=document.getElementById("hQList");
   if(!qRoomData.questions.length){el.innerHTML='<p style="color:var(--muted);font-size:13px">No questions yet.</p>';return;}
   el.innerHTML=qRoomData.questions.map((q,i)=>`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between"><div style="font-size:13px"><strong>${i+1}.</strong> ${q.q}</div><button onclick="removeQ(${i})" style="background:none;border:none;color:var(--red);cursor:pointer">×</button></div>`).join('');
@@ -220,6 +220,113 @@ function showPScores(room){
     myHtml=`<div class="status status-info" style="margin-bottom:14px">This round: <strong>${myAns.score}/100</strong> — ${myAns.feedback||""}</div>`;
   }
   document.getElementById("pLeaderboard").innerHTML=myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;color:var(--purple-light)">${s}pts</span></div>`).join('');
+}
+
+
+// ── AI QUESTION GENERATOR ───────────────────────────────────────────
+async function aiGenerateQuestions() {
+  const topic = document.getElementById("aiQTopic").value;
+  const count = parseInt(document.getElementById("aiQCount").value) || 10;
+  const context = document.getElementById("hContext").value.trim();
+  const btn = document.getElementById("aiGenBtn");
+  const status = document.getElementById("aiGenStatus");
+
+  const topicNames = {
+    "ritual": "Ritual Chain, AI precompiles, LLM inference on-chain, TEE execution",
+    "solidity": "Solidity smart contracts, EVM, gas optimization, security patterns",
+    "defi": "DeFi protocols, AMMs, liquidity pools, yield farming, stablecoins",
+    "web3": "Web3, blockchain fundamentals, consensus mechanisms, wallets, transactions",
+    "commit-reveal": "Commit-reveal schemes, privacy on blockchain, zero knowledge proofs",
+    "nft": "NFTs, ERC-721, metadata, marketplaces, tokenization",
+    "layer2": "Layer 2 scaling, rollups, state channels, bridges",
+    "custom": context || "blockchain technology"
+  };
+
+  btn.disabled = true;
+  btn.textContent = "Generating...";
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI is creating ' + count + ' questions on ' + topicNames[topic].split(",")[0] + '...</div>';
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 3000,
+        messages: [{
+          role: "user",
+          content: `You are a blockchain educator creating quiz questions.
+
+Topic: ${topicNames[topic]}
+${context ? "Additional context:\n" + context : ""}
+
+Generate exactly ${count} quiz questions about the topic above.
+Questions should range from beginner to advanced.
+Each question should have a clear model answer.
+
+Return JSON only, no markdown:
+{
+  "questions": [
+    {
+      "q": "question text here",
+      "modelAnswer": "concise model answer for AI scoring",
+      "difficulty": "easy|medium|hard"
+    }
+  ]
+}`
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content[0].text.replace(/\`\`\`json|\`\`\`/g, '').trim();
+    const result = JSON.parse(text);
+
+    // Add generated questions to room
+    let added = 0;
+    result.questions.forEach(q => {
+      qRoomData.questions.push({
+        q: q.q,
+        modelAnswer: q.modelAnswer,
+        difficulty: q.difficulty
+      });
+      added++;
+    });
+    saveR(qRoomData);
+    renderHQList();
+
+    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated and added!</div>';
+    btn.disabled = false;
+    btn.textContent = "✨ Generate with AI";
+  } catch(e) {
+    status.innerHTML = '<div class="status status-error">Error: ' + e.message + '</div>';
+    btn.disabled = false;
+    btn.textContent = "✨ Generate with AI";
+  }
+}
+
+// Update renderHQList to show difficulty badges
+function renderHQListUpdated() {
+  const el = document.getElementById("hQList");
+  if (!qRoomData.questions.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px">No questions yet. Generate with AI or add manually!</p>';
+    return;
+  }
+  const diffColors = { easy: "badge-green", medium: "badge-amber", hard: "badge-red" };
+  el.innerHTML = qRoomData.questions.map((q, i) => `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="flex:1;margin-right:8px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
+          ${q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0, 80) + (q.modelAnswer.length > 80 ? "..." : "") + '</div>' : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          ${q.difficulty ? '<span class="badge ' + (diffColors[q.difficulty] || "badge-muted") + '">' + q.difficulty + '</span>' : ''}
+          <button onclick="removeQ(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0">×</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
 
 </script>
@@ -561,11 +668,33 @@ function showPScores(room){
           </div>
           <div class="card-body">
             <div id="hQList" style="margin-bottom:14px"></div>
+
+            <!-- AI Generate Questions -->
+            <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.3);border-radius:10px;padding:14px;margin-bottom:12px">
+              <div style="font-size:12px;font-weight:700;color:var(--purple-light);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px">🤖 AI Generate Questions</div>
+              <select id="aiQTopic" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;outline:none;margin-bottom:8px">
+                <option value="ritual">Ritual Chain & AI Precompiles</option>
+                <option value="solidity">Solidity Smart Contracts</option>
+                <option value="defi">DeFi Protocols</option>
+                <option value="web3">Web3 & Blockchain Fundamentals</option>
+                <option value="commit-reveal">Commit-Reveal & Privacy</option>
+                <option value="nft">NFTs & Tokenization</option>
+                <option value="layer2">Layer 2 & Scaling</option>
+                <option value="custom">Custom (use context above)</option>
+              </select>
+              <div style="display:flex;gap:8px;align-items:center">
+                <input id="aiQCount" type="number" value="10" min="3" max="20" style="width:80px;padding:8px;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;outline:none"/>
+                <span style="font-size:12px;color:var(--muted)">questions</span>
+                <button onclick="aiGenerateQuestions()" class="btn btn-primary" style="margin-top:0;padding:8px 16px;width:auto;flex:1" id="aiGenBtn">✨ Generate with AI</button>
+              </div>
+              <div id="aiGenStatus" style="margin-top:8px"></div>
+            </div>
+
             <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:14px">
-              <label style="margin-top:0">New Question</label>
+              <label style="margin-top:0">Or Add Manually</label>
               <input id="newQ" placeholder="Question..." style="margin-bottom:8px"/>
               <input id="newA" placeholder="Model answer (AI reference)..." style="margin-bottom:8px"/>
-              <button class="btn btn-primary" onclick="addQ()" style="margin-top:0;padding:8px 16px;width:auto">+ Add</button>
+              <button class="btn btn-outline" onclick="addQ()" style="margin-top:0;padding:8px 16px;width:auto">+ Add</button>
             </div>
           </div>
         </div>
@@ -1001,7 +1130,7 @@ function addQ() {
   renderHQList();
 }
 
-function renderHQList() {
+function renderHQList() { renderHQListUpdated(); } function _renderHQListOld() {
   const el=document.getElementById("hQList");
   if(!qRoomData.questions.length){el.innerHTML='<p style="color:var(--muted);font-size:13px">No questions yet.</p>';return;}
   el.innerHTML=qRoomData.questions.map((q,i)=>`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between"><div style="font-size:13px"><strong>${i+1}.</strong> ${q.q}</div><button onclick="removeQ(${i})" style="background:none;border:none;color:var(--red);cursor:pointer">×</button></div>`).join('');
@@ -1157,6 +1286,113 @@ function showPScores(room){
     myHtml=`<div class="status status-info" style="margin-bottom:14px">This round: <strong>${myAns.score}/100</strong> — ${myAns.feedback||""}</div>`;
   }
   document.getElementById("pLeaderboard").innerHTML=myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;color:var(--purple-light)">${s}pts</span></div>`).join('');
+}
+
+
+// ── AI QUESTION GENERATOR ───────────────────────────────────────────
+async function aiGenerateQuestions() {
+  const topic = document.getElementById("aiQTopic").value;
+  const count = parseInt(document.getElementById("aiQCount").value) || 10;
+  const context = document.getElementById("hContext").value.trim();
+  const btn = document.getElementById("aiGenBtn");
+  const status = document.getElementById("aiGenStatus");
+
+  const topicNames = {
+    "ritual": "Ritual Chain, AI precompiles, LLM inference on-chain, TEE execution",
+    "solidity": "Solidity smart contracts, EVM, gas optimization, security patterns",
+    "defi": "DeFi protocols, AMMs, liquidity pools, yield farming, stablecoins",
+    "web3": "Web3, blockchain fundamentals, consensus mechanisms, wallets, transactions",
+    "commit-reveal": "Commit-reveal schemes, privacy on blockchain, zero knowledge proofs",
+    "nft": "NFTs, ERC-721, metadata, marketplaces, tokenization",
+    "layer2": "Layer 2 scaling, rollups, state channels, bridges",
+    "custom": context || "blockchain technology"
+  };
+
+  btn.disabled = true;
+  btn.textContent = "Generating...";
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI is creating ' + count + ' questions on ' + topicNames[topic].split(",")[0] + '...</div>';
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 3000,
+        messages: [{
+          role: "user",
+          content: `You are a blockchain educator creating quiz questions.
+
+Topic: ${topicNames[topic]}
+${context ? "Additional context:\n" + context : ""}
+
+Generate exactly ${count} quiz questions about the topic above.
+Questions should range from beginner to advanced.
+Each question should have a clear model answer.
+
+Return JSON only, no markdown:
+{
+  "questions": [
+    {
+      "q": "question text here",
+      "modelAnswer": "concise model answer for AI scoring",
+      "difficulty": "easy|medium|hard"
+    }
+  ]
+}`
+        }]
+      })
+    });
+
+    const data = await response.json();
+    const text = data.content[0].text.replace(/\`\`\`json|\`\`\`/g, '').trim();
+    const result = JSON.parse(text);
+
+    // Add generated questions to room
+    let added = 0;
+    result.questions.forEach(q => {
+      qRoomData.questions.push({
+        q: q.q,
+        modelAnswer: q.modelAnswer,
+        difficulty: q.difficulty
+      });
+      added++;
+    });
+    saveR(qRoomData);
+    renderHQList();
+
+    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions generated and added!</div>';
+    btn.disabled = false;
+    btn.textContent = "✨ Generate with AI";
+  } catch(e) {
+    status.innerHTML = '<div class="status status-error">Error: ' + e.message + '</div>';
+    btn.disabled = false;
+    btn.textContent = "✨ Generate with AI";
+  }
+}
+
+// Update renderHQList to show difficulty badges
+function renderHQListUpdated() {
+  const el = document.getElementById("hQList");
+  if (!qRoomData.questions.length) {
+    el.innerHTML = '<p style="color:var(--muted);font-size:13px">No questions yet. Generate with AI or add manually!</p>';
+    return;
+  }
+  const diffColors = { easy: "badge-green", medium: "badge-amber", hard: "badge-red" };
+  el.innerHTML = qRoomData.questions.map((q, i) => `
+    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div style="flex:1;margin-right:8px">
+          <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
+          ${q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0, 80) + (q.modelAnswer.length > 80 ? "..." : "") + '</div>' : ''}
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
+          ${q.difficulty ? '<span class="badge ' + (diffColors[q.difficulty] || "badge-muted") + '">' + q.difficulty + '</span>' : ''}
+          <button onclick="removeQ(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:0">×</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
 
 </script>
