@@ -6,23 +6,8 @@
 <title>NAN Bounty Judge — Privacy-Preserving AI Bounty System</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js">
 // ── QUIZ ARENA ─────────────────────────────────────────────────────
-let OPENAI_KEY = localStorage.getItem("oai_key") || "";
-
-function saveOpenAIKey() {
-  const k = document.getElementById("oaiKeyInput").value.trim();
-  if (!k.startsWith("sk-")) { alert("Invalid OpenAI key — must start with sk-"); return; }
-  OPENAI_KEY = k;
-  localStorage.setItem("oai_key", k);
-  document.getElementById("oaiKeyPanel").style.display = "none";
-  document.getElementById("quizRoleSelector").style.display = "";
-}
-
-function checkOpenAIKey() {
-  if (!OPENAI_KEY) {
-    document.getElementById("quizRoleSelector").style.display = "none";
-    document.getElementById("oaiKeyPanel").style.display = "";
-  }
-}
+// OpenAI key handled server-side
+function checkOpenAIKey() {} // no-op
 // ── QUIZ ARENA ─────────────────────────────────────────────────────
 let qRole=null, qRoomCode=null, qRoomData=null;
 let hPollInt=null, pPollInt=null, pTimerInt=null;
@@ -337,11 +322,10 @@ Find key concepts, facts, technical details, and recent updates that would make 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
 
     // Step 2: Generate questions based on searched knowledge
-    const genResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const genResponse = await fetch("/api/quiz", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + OPENAI_KEY
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -411,11 +395,10 @@ Return JSON only (no markdown, no backticks):
     // Fallback: generate from Claude's training knowledge
     status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
     try {
-      const fallback = await fetch("https://api.openai.com/v1/chat/completions", {
+      const fallback = await fetch("/api/quiz", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + OPENAI_KEY
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -1575,11 +1558,10 @@ Find key concepts, facts, technical details, and recent updates that would make 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
 
     // Step 2: Generate questions based on searched knowledge
-    const genResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const genResponse = await fetch("/api/quiz", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + OPENAI_KEY
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -1649,11 +1631,10 @@ Return JSON only (no markdown, no backticks):
     // Fallback: generate from Claude's training knowledge
     status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
     try {
-      const fallback = await fetch("https://api.openai.com/v1/chat/completions", {
+      const fallback = await fetch("/api/quiz", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + OPENAI_KEY
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
