@@ -108,7 +108,7 @@ async function hostShowScores(){
   try {
     const ansList=Object.entries(ans).map(([n,a])=>n+": "+a.text).join("\n");
     const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers:{"Content-Type":"application/json"},
+      method:"POST",headers:{"Content-Type":"application/json","anthropic-dangerous-direct-browser-calls":"true"},
       body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:`You are a blockchain quiz judge. Score each answer 0-100.\n\nCONTEXT:\n${qRoomData.context||"General blockchain"}\n\nQUESTION: ${q.q}\n${q.modelAnswer?"MODEL ANSWER: "+q.modelAnswer:""}\n\nANSWERS:\n${ansList}\n\nReturn JSON only: {"scores":[{"name":"string","score":0,"feedback":"one sentence"}]}`}]})
     });
     const data=await res.json();
@@ -321,7 +321,10 @@ Find key concepts, facts, technical details, and recent updates that would make 
     // Step 2: Generate questions based on searched knowledge
     const genResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "anthropic-dangerous-direct-browser-calls": "true"
+      },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 4000,
@@ -396,7 +399,10 @@ Return JSON only (no markdown):
     try {
       const fallback = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "anthropic-dangerous-direct-browser-calls": "true"
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 3000,
@@ -1325,7 +1331,7 @@ async function hostShowScores(){
   try {
     const ansList=Object.entries(ans).map(([n,a])=>n+": "+a.text).join("\n");
     const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers:{"Content-Type":"application/json"},
+      method:"POST",headers:{"Content-Type":"application/json","anthropic-dangerous-direct-browser-calls":"true"},
       body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:`You are a blockchain quiz judge. Score each answer 0-100.\n\nCONTEXT:\n${qRoomData.context||"General blockchain"}\n\nQUESTION: ${q.q}\n${q.modelAnswer?"MODEL ANSWER: "+q.modelAnswer:""}\n\nANSWERS:\n${ansList}\n\nReturn JSON only: {"scores":[{"name":"string","score":0,"feedback":"one sentence"}]}`}]})
     });
     const data=await res.json();
@@ -1538,7 +1544,10 @@ Find key concepts, facts, technical details, and recent updates that would make 
     // Step 2: Generate questions based on searched knowledge
     const genResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "anthropic-dangerous-direct-browser-calls": "true"
+      },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
         max_tokens: 4000,
@@ -1613,7 +1622,10 @@ Return JSON only (no markdown):
     try {
       const fallback = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "anthropic-dangerous-direct-browser-calls": "true"
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
           max_tokens: 3000,
