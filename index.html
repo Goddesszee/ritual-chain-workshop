@@ -561,85 +561,56 @@ const TOPIC_SEARCHES = {
 };
 
 async function aiGenerateQuestions() {
-  const topic = document.getElementById("aiQTopic").value;
   const count = parseInt(document.getElementById("aiQCount").value) || 10;
-  const customTopic = document.getElementById("aiCustomTopic")?.value?.trim() || "";
   const btn = document.getElementById("aiGenBtn");
   const status = document.getElementById("aiGenStatus");
 
-  const topicMap = {
-    "ritual": "Ritual Chain blockchain with native AI precompiles. Key facts: LLM precompile at 0x0802, HTTP at 0x0801, block.timestamp in milliseconds, Chain ID 1979, token CRAT, TEE-backed execution, RitualWallet for compute payments, commit-reveal privacy pattern",
-    "solidity": "Solidity smart contracts, EVM, gas optimization, security patterns, reentrancy, access control, events, mappings",
-    "defi": "DeFi protocols, AMMs, liquidity pools, yield farming, stablecoins, lending, DEX, TVL",
-    "web3": "Web3, blockchain fundamentals, consensus mechanisms, wallets, transactions, gas, nodes",
-    "commit-reveal": "Commit-reveal schemes, privacy on blockchain, keccak256 hashing, salts, zero knowledge",
-    "nft": "NFTs, ERC-721, ERC-1155, metadata, IPFS, royalties, marketplaces",
-    "layer2": "Layer 2 scaling, optimistic rollups, ZK rollups, state channels, bridges, Ethereum scaling",
-    "custom": customTopic || "blockchain technology"
-  };
-
-  const topicLabel = topicMap[topic] || topicMap["web3"];
-
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Generating ' + count + ' questions...';
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI generating ' + count + ' questions about ' + (topic === "custom" ? customTopic : topic) + '...</div>';
+  btn.innerHTML = '<span class="spinner"></span>Searching Ritual docs...';
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Fetching latest Ritual Chain docs and generating ' + count + ' unique questions...</div>';
+
+  // Get previously used questions to avoid repeats
+  const allUsed = JSON.parse(localStorage.getItem("usedQuestions_" + qRoomCode) || "[]");
 
   try {
-    const aiKey = await getOpenAIKey();
-    if (!aiKey) throw new Error("API key not found. Check Vercel environment variables.");
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Call server which fetches Ritual docs + generates questions
+    const response = await fetch("/api/search", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + aiKey },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        max_tokens: 3000,
-        temperature: 0.7,
-        messages: [
-          { role: "system", content: "You are a blockchain quiz expert. Generate multiple choice questions. Return ONLY valid JSON, no markdown, no explanation." },
-          { role: "user", content: `Generate exactly ${count} multiple choice quiz questions about: ${topicLabel}
-
-Rules:
-- Each question has exactly 4 options (A, B, C, D)
-- Only ONE correct answer per question
-- Wrong options should be plausible but clearly wrong to experts
-- Mix difficulty: 3 easy, 4 medium, 3 hard
-- Questions should be specific and factual
-
-Return this exact JSON format:
-{"questions":[{"q":"question text","options":["A. option1","B. option2","C. option3","D. option4"],"correct":"A","explanation":"brief explanation","difficulty":"easy"}]}` }
-        ]
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: "ritual", count, usedQuestions: allUsed })
     });
 
     if (!response.ok) {
       const err = await response.json();
-      throw new Error(err.error?.message || "OpenAI error " + response.status);
+      throw new Error(err.error || "Server error " + response.status);
     }
 
-    const data = await response.json();
-    const text = data.choices[0].message.content.trim();
-    const jsonStr = text.replace(/^```json
-?|
-?```$/g, '').trim();
-    const result = JSON.parse(jsonStr);
+    const result = await response.json();
+    if (!result.questions?.length) throw new Error("No questions returned");
 
-    if (!result.questions?.length) throw new Error("No questions generated");
+    // Track used questions (never repeat)
+    const newUsed = result.questions.map(q => q.q);
+    localStorage.setItem("usedQuestions_" + qRoomCode, JSON.stringify([...allUsed, ...newUsed]));
 
-    // Save locally immediately
+    // Save locally immediately so host can see them
     result.questions.forEach(q => {
       const opts = q.options || ["A. True","B. False","C. Maybe","D. None"];
-      qRoomData.questions.push({ q: q.q, options: opts, correct: q.correct||"A", explanation: q.explanation||"", difficulty: q.difficulty||"medium" });
+      qRoomData.questions.push({
+        q: q.q, options: opts,
+        correct: q.correct || "A",
+        explanation: q.explanation || "",
+        difficulty: q.difficulty || "medium"
+      });
     });
     saveR(qRoomData);
     renderHQList();
 
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding ' + result.questions.length + ' questions to blockchain (sign once per question)...</div>';
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding ' + result.questions.length + ' questions to blockchain...</div>';
 
-    // Send all transactions simultaneously - just approve each popup
+    // Send all transactions - one approval per question but all confirmations parallel
     const txs = [];
     for (const q of result.questions) {
-      const opts = (q.options||[]).map(o => o.replace(/^[A-D][.\s]+/,'').trim());
+      const opts = (q.options || []).map(o => o.replace(/^[A-D][.\s]+/, '').trim());
       try {
         const tx = await quizContract.addQuestion(
           qRoomCode, q.q,
@@ -647,12 +618,11 @@ Return this exact JSON format:
           q.correct||"A", q.explanation||""
         );
         txs.push(tx.wait());
-      } catch(e) { console.error("addQ error:", e.message); }
+      } catch(e) { console.error("addQ:", e.message); }
     }
 
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for ' + txs.length + ' blockchain confirmations...</div>';
     await Promise.all(txs);
-    status.innerHTML = '<div class="status status-success">Done! ' + result.questions.length + ' questions ready.</div>';
+    status.innerHTML = '<div class="status status-success">' + result.questions.length + ' unique questions from live Ritual docs added to blockchain!</div>';
 
   } catch(e) {
     console.error(e);
