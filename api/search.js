@@ -120,7 +120,7 @@ Return ONLY this JSON (no markdown, no explanation):
       },
       body: JSON.stringify({
         model: "gpt-4o",
-        max_tokens: 4000,
+        max_tokens: 3000,
         temperature: 0.9,
         messages: [
           { role: "system", content: `You are a Ritual Chain expert quiz creator. Here is the complete Ritual Chain knowledge base:\n\n${RITUAL_KNOWLEDGE}\n\nGenerate quiz questions ONLY from this knowledge. Be specific and accurate.` },
