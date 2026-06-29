@@ -202,7 +202,12 @@ async function hostShowScores(){
     qRoomData.state="scored"; saveR(qRoomData);
     const sorted=result.scores.sort((a,b)=>b.score-a.score);
     const medals=["🥇","🥈","🥉"];
-    document.getElementById("hScores").innerHTML=sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:var(--purple-light)">${s.score}/100</div></div>`).join('');
+    // Show correct answer to everyone
+    const correctAns = qRoomData.questions[qIdx]?.correct || "";
+    const correctLabel = {A:"A",B:"B",C:"C",D:"D"}[correctAns] || correctAns;
+    const correctText = (qRoomData.questions[qIdx]?.options || [])[["A","B","C","D"].indexOf(correctAns)] || "";
+    const correctHtml = correctAns ? `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#10b981"><strong>Correct Answer: ${correctLabel}</strong>${correctText ? " — " + correctText.replace(/^[A-D][.\s]+/,'') : ""}<br><small style="opacity:0.7">${qRoomData.questions[qIdx]?.explanation||""}</small></div>` : "";
+    document.getElementById("hScores").innerHTML= correctHtml + sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${s.score>=70?"rgba(16,185,129,0.08)":"rgba(239,68,68,0.08)"};border:1px solid ${s.score>=70?"rgba(16,185,129,0.3)":"rgba(239,68,68,0.3)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:${s.score>=70?"#10b981":"#ef4444"}">${s.score}/100</div></div>`).join('');
     // Score on-chain
     try {
       const scoreTx = await quizContract.scoreRound(qRoomCode, qIdx);
@@ -480,7 +485,11 @@ function showPScores(room){
     document.getElementById("pTotalScore").textContent=pScore;
     myHtml=`<div class="status status-info" style="margin-bottom:14px">This round: <strong>${myAns.score}/100</strong> — ${myAns.feedback||""}</div>`;
   }
-  document.getElementById("pLeaderboard").innerHTML=myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;color:var(--purple-light)">${s}pts</span></div>`).join('');
+  const myAns2 = room.answers?.[pName];
+  const corrAns = room.questions?.[Number(room.currentQuestion)]?.correct || "";
+  const corrText = (room.questions?.[Number(room.currentQuestion)]?.options||[])[["A","B","C","D"].indexOf(corrAns)] || "";
+  const corrHtml = corrAns ? `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);border-radius:10px;padding:14px;margin-bottom:16px;font-size:14px;color:#10b981;text-align:center"><strong>Correct Answer: ${corrAns}</strong>${corrText?" — "+corrText.replace(/^[A-D][.\s]+/,''):""}</div>` : "";
+  document.getElementById("pLeaderboard").innerHTML= corrHtml + myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;font-size:16px;color:var(--purple-light)">${s}pts</span></div>`).join('');
 }
 
 
@@ -645,42 +654,42 @@ Return JSON only (no markdown, no backticks):
     if (!jsonMatch) throw new Error("Could not parse AI response");
     const result = JSON.parse(jsonMatch[0]);
 
-    // Add questions on-chain with real MCQ options
-    let added = 0;
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding ' + result.questions.length + ' questions to blockchain...</div>';
-
-    for (const q of result.questions) {
-      const opts = q.options || ["A. True", "B. False", "C. Maybe", "D. None of above"];
-      // Strip letter prefix from options
-      const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/, '').trim());
-      try {
-        const tx = await quizContract.addQuestion(
-          qRoomCode,
-          q.q,
-          cleanOpts[0] || "True",
-          cleanOpts[1] || "False",
-          cleanOpts[2] || "Maybe",
-          cleanOpts[3] || "None of the above",
-          q.correct || "A",
-          q.explanation || q.modelAnswer || ""
-        );
-        await tx.wait();
-        qRoomData.questions.push({
-          q: q.q,
-          options: opts,
-          correct: q.correct || "A",
-          explanation: q.explanation || q.modelAnswer || "",
-          difficulty: q.difficulty,
-          source: q.source
-        });
-        added++;
-        status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Added ' + added + '/' + result.questions.length + ' questions on-chain...</div>';
-      } catch(e) {
-        console.error("Failed to add question:", e.message);
-      }
-    }
+    // Save questions locally first (instant)
+    result.questions.forEach(q => {
+      const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
+      qRoomData.questions.push({
+        q: q.q, options: opts,
+        correct: q.correct || "A",
+        explanation: q.explanation || q.modelAnswer || "",
+        difficulty: q.difficulty, source: q.source
+      });
+    });
     saveR(qRoomData);
     renderHQList();
+
+    // Add all questions on-chain in sequence with ONE MetaMask popup per tx
+    // Use a single batched approach - send all txs then wait for all
+    let added = 0;
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sending ' + result.questions.length + ' questions to blockchain (approve once per question)...</div>';
+
+    const txPromises = [];
+    for (const q of result.questions) {
+      const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
+      const cleanOpts = opts.map(o => o.replace(/^[A-D][.\s]+/,'').trim());
+      try {
+        const tx = await quizContract.addQuestion(
+          qRoomCode, q.q,
+          cleanOpts[0]||"True", cleanOpts[1]||"False",
+          cleanOpts[2]||"Maybe", cleanOpts[3]||"None",
+          q.correct||"A", q.explanation||q.modelAnswer||""
+        );
+        txPromises.push(tx.wait());
+        added++;
+        status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sent ' + added + '/' + result.questions.length + ' — waiting for confirmations...</div>';
+      } catch(e) { console.error("tx error:", e.message); }
+    }
+    // Wait for all confirmations at once
+    await Promise.all(txPromises);
 
     const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
     status.innerHTML = '<div class="status status-success"> ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
@@ -708,18 +717,18 @@ Return JSON only (no markdown, no backticks):
       if (fd.error) throw new Error(fd.error.message);
       const ft = fd.choices[0].message.content.replace(/\`\`\`json|\`\`\`/g,"").trim();
       const fr = JSON.parse(ft);
-      status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding questions on-chain...</div>';
+      fr.questions.forEach(q => {
+        const opts = q.options||["A. True","B. False","C. Maybe","D. None"];
+        qRoomData.questions.push({q:q.q,options:opts,correct:q.correct||"A",difficulty:q.difficulty});
+      });
+      saveR(qRoomData); renderHQList();
+      status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sending to blockchain...</div>';
+      const fxs = [];
       for (const q of fr.questions) {
-        const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
-        const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/,'').trim());
-        try {
-          const tx = await quizContract.addQuestion(qRoomCode, q.q, cleanOpts[0]||"True", cleanOpts[1]||"False", cleanOpts[2]||"Maybe", cleanOpts[3]||"None", q.correct||"A", q.modelAnswer||"");
-          await tx.wait();
-          qRoomData.questions.push({q:q.q,options:opts,correct:q.correct||"A",difficulty:q.difficulty});
-        } catch(e) { console.error(e.message); }
+        const opts=(q.options||["A","B","C","D"]).map(o=>o.replace(/^[A-D][.\s]+/,'').trim());
+        try { const tx=await quizContract.addQuestion(qRoomCode,q.q,opts[0]||"True",opts[1]||"False",opts[2]||"Maybe",opts[3]||"None",q.correct||"A",q.modelAnswer||""); fxs.push(tx.wait()); } catch(e){console.error(e.message);}
       }
-      saveR(qRoomData);
-      renderHQList();
+      await Promise.all(fxs);
       status.innerHTML = '<div class="status status-success"> ' + fr.questions.length + ' questions added on-chain!</div>';
     } catch(e2) {
       status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
@@ -871,6 +880,26 @@ function renderHQListUpdated() {
   .stat:last-child { border-bottom: none; }
   .stat-label { font-size: 12px; color: var(--muted); }
   .stat-value { font-size: 13px; font-weight: 600; }
+  /* Mobile responsive */
+  @media (max-width: 768px) {
+    main { padding: 16px 12px; }
+    .hero h1 { font-size: 28px; }
+    .grid { grid-template-columns: 1fr !important; }
+    .phases { flex-wrap: wrap; }
+    .tab { padding: 8px 12px; font-size: 12px; }
+    .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .card-body { padding: 14px; }
+    .card-header { padding: 14px; }
+    header { padding: 10px 14px; }
+    #connectBtn { padding: 7px 12px; font-size: 12px; }
+    .quiz-role-grid { grid-template-columns: 1fr !important; }
+    #pOptions { grid-template-columns: 1fr !important; }
+    #pOptions button { padding: 14px !important; font-size: 14px !important; }
+    #pQText { font-size: 15px !important; }
+    .stat-label { font-size: 11px; }
+    .bounty-meta { gap: 8px; }
+    .hero p { font-size: 14px; }
+  }
 </style>
 </head>
 <body>
@@ -1065,7 +1094,7 @@ function renderHQListUpdated() {
         </div>
 
         <!-- Role cards side by side -->
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="quiz-role-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
 
           <div onclick="selectRole('host')" style="background:var(--card);border:2px solid var(--border);border-radius:16px;padding:32px;text-align:center;cursor:pointer;transition:all 0.2s" onmouseover="this.style.borderColor='var(--purple-light)';this.style.background='rgba(124,58,237,0.08)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--card)'">
             <div style="font-size:52px;margin-bottom:16px">🎙️</div>
@@ -1086,7 +1115,7 @@ function renderHQListUpdated() {
         <!-- How it works -->
         <div style="margin-top:32px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px">
           <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">How it works</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;text-align:center">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:16px;text-align:center">
             <div>
               <div style="font-size:24px;margin-bottom:8px">AI</div>
               <div style="font-size:12px;font-weight:700;margin-bottom:4px">AI Generates</div>
@@ -1770,7 +1799,12 @@ async function hostShowScores(){
     qRoomData.state="scored"; saveR(qRoomData);
     const sorted=result.scores.sort((a,b)=>b.score-a.score);
     const medals=["🥇","🥈","🥉"];
-    document.getElementById("hScores").innerHTML=sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:var(--purple-light)">${s.score}/100</div></div>`).join('');
+    // Show correct answer to everyone
+    const correctAns = qRoomData.questions[qIdx]?.correct || "";
+    const correctLabel = {A:"A",B:"B",C:"C",D:"D"}[correctAns] || correctAns;
+    const correctText = (qRoomData.questions[qIdx]?.options || [])[["A","B","C","D"].indexOf(correctAns)] || "";
+    const correctHtml = correctAns ? `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#10b981"><strong>Correct Answer: ${correctLabel}</strong>${correctText ? " — " + correctText.replace(/^[A-D][.\s]+/,'') : ""}<br><small style="opacity:0.7">${qRoomData.questions[qIdx]?.explanation||""}</small></div>` : "";
+    document.getElementById("hScores").innerHTML= correctHtml + sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${s.score>=70?"rgba(16,185,129,0.08)":"rgba(239,68,68,0.08)"};border:1px solid ${s.score>=70?"rgba(16,185,129,0.3)":"rgba(239,68,68,0.3)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:${s.score>=70?"#10b981":"#ef4444"}">${s.score}/100</div></div>`).join('');
     // Score on-chain
     try {
       const scoreTx = await quizContract.scoreRound(qRoomCode, qIdx);
@@ -2048,7 +2082,11 @@ function showPScores(room){
     document.getElementById("pTotalScore").textContent=pScore;
     myHtml=`<div class="status status-info" style="margin-bottom:14px">This round: <strong>${myAns.score}/100</strong> — ${myAns.feedback||""}</div>`;
   }
-  document.getElementById("pLeaderboard").innerHTML=myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;color:var(--purple-light)">${s}pts</span></div>`).join('');
+  const myAns2 = room.answers?.[pName];
+  const corrAns = room.questions?.[Number(room.currentQuestion)]?.correct || "";
+  const corrText = (room.questions?.[Number(room.currentQuestion)]?.options||[])[["A","B","C","D"].indexOf(corrAns)] || "";
+  const corrHtml = corrAns ? `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);border-radius:10px;padding:14px;margin-bottom:16px;font-size:14px;color:#10b981;text-align:center"><strong>Correct Answer: ${corrAns}</strong>${corrText?" — "+corrText.replace(/^[A-D][.\s]+/,''):""}</div>` : "";
+  document.getElementById("pLeaderboard").innerHTML= corrHtml + myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;font-size:16px;color:var(--purple-light)">${s}pts</span></div>`).join('');
 }
 
 
@@ -2212,42 +2250,42 @@ Return JSON only (no markdown, no backticks):
     if (!jsonMatch) throw new Error("Could not parse AI response");
     const result = JSON.parse(jsonMatch[0]);
 
-    // Add questions on-chain with real MCQ options
-    let added = 0;
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding ' + result.questions.length + ' questions to blockchain...</div>';
-
-    for (const q of result.questions) {
-      const opts = q.options || ["A. True", "B. False", "C. Maybe", "D. None of above"];
-      // Strip letter prefix from options
-      const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/, '').trim());
-      try {
-        const tx = await quizContract.addQuestion(
-          qRoomCode,
-          q.q,
-          cleanOpts[0] || "True",
-          cleanOpts[1] || "False",
-          cleanOpts[2] || "Maybe",
-          cleanOpts[3] || "None of the above",
-          q.correct || "A",
-          q.explanation || q.modelAnswer || ""
-        );
-        await tx.wait();
-        qRoomData.questions.push({
-          q: q.q,
-          options: opts,
-          correct: q.correct || "A",
-          explanation: q.explanation || q.modelAnswer || "",
-          difficulty: q.difficulty,
-          source: q.source
-        });
-        added++;
-        status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Added ' + added + '/' + result.questions.length + ' questions on-chain...</div>';
-      } catch(e) {
-        console.error("Failed to add question:", e.message);
-      }
-    }
+    // Save questions locally first (instant)
+    result.questions.forEach(q => {
+      const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
+      qRoomData.questions.push({
+        q: q.q, options: opts,
+        correct: q.correct || "A",
+        explanation: q.explanation || q.modelAnswer || "",
+        difficulty: q.difficulty, source: q.source
+      });
+    });
     saveR(qRoomData);
     renderHQList();
+
+    // Add all questions on-chain in sequence with ONE MetaMask popup per tx
+    // Use a single batched approach - send all txs then wait for all
+    let added = 0;
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sending ' + result.questions.length + ' questions to blockchain (approve once per question)...</div>';
+
+    const txPromises = [];
+    for (const q of result.questions) {
+      const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
+      const cleanOpts = opts.map(o => o.replace(/^[A-D][.\s]+/,'').trim());
+      try {
+        const tx = await quizContract.addQuestion(
+          qRoomCode, q.q,
+          cleanOpts[0]||"True", cleanOpts[1]||"False",
+          cleanOpts[2]||"Maybe", cleanOpts[3]||"None",
+          q.correct||"A", q.explanation||q.modelAnswer||""
+        );
+        txPromises.push(tx.wait());
+        added++;
+        status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sent ' + added + '/' + result.questions.length + ' — waiting for confirmations...</div>';
+      } catch(e) { console.error("tx error:", e.message); }
+    }
+    // Wait for all confirmations at once
+    await Promise.all(txPromises);
 
     const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
     status.innerHTML = '<div class="status status-success"> ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
@@ -2274,18 +2312,18 @@ Return JSON only (no markdown, no backticks):
       if (fd.error) throw new Error(fd.error.message);
       const ft = fd.choices[0].message.content.replace(/\`\`\`json|\`\`\`/g,"").trim();
       const fr = JSON.parse(ft);
-      status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding questions on-chain...</div>';
+      fr.questions.forEach(q => {
+        const opts = q.options||["A. True","B. False","C. Maybe","D. None"];
+        qRoomData.questions.push({q:q.q,options:opts,correct:q.correct||"A",difficulty:q.difficulty});
+      });
+      saveR(qRoomData); renderHQList();
+      status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sending to blockchain...</div>';
+      const fxs = [];
       for (const q of fr.questions) {
-        const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
-        const cleanOpts = opts.map(o => o.replace(/^[A-D][\.\s]+/,'').trim());
-        try {
-          const tx = await quizContract.addQuestion(qRoomCode, q.q, cleanOpts[0]||"True", cleanOpts[1]||"False", cleanOpts[2]||"Maybe", cleanOpts[3]||"None", q.correct||"A", q.modelAnswer||"");
-          await tx.wait();
-          qRoomData.questions.push({q:q.q,options:opts,correct:q.correct||"A",difficulty:q.difficulty});
-        } catch(e) { console.error(e.message); }
+        const opts=(q.options||["A","B","C","D"]).map(o=>o.replace(/^[A-D][.\s]+/,'').trim());
+        try { const tx=await quizContract.addQuestion(qRoomCode,q.q,opts[0]||"True",opts[1]||"False",opts[2]||"Maybe",opts[3]||"None",q.correct||"A",q.modelAnswer||""); fxs.push(tx.wait()); } catch(e){console.error(e.message);}
       }
-      saveR(qRoomData);
-      renderHQList();
+      await Promise.all(fxs);
       status.innerHTML = '<div class="status status-success"> ' + fr.questions.length + ' questions added on-chain!</div>';
     } catch(e2) {
       status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
