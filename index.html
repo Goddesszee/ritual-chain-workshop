@@ -5,383 +5,1158 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>NAN Bounty Judge — Privacy-Preserving AI Bounty System</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js">
-// ── QUIZ ARENA ─────────────────────────────────────────────────────────────
-// Simple localStorage-based room system (works without a backend)
-let quizRole = null;
-let roomCode = null;
-let roomData = null;
-let hostInterval = null;
-let playerInterval = null;
-let playerTimerInterval = null;
-let playerName = "";
-let playerScore = 0;
-let currentQIndex = 0;
-let hasAnswered = false;
-let timerSeconds = 30;
+// ── QUIZ ARENA ─────────────────────────────────────────────────────
+let qRole=null, qRoomCode=null, qRoomData=null;
+let hPollInt=null, pPollInt=null, pTimerInt=null;
+let pName="", pScore=0, qIdx=0, pAnswered=false, pTimerSecs=30;
 
-function getRoomKey(code) { return "quizRoom_" + code.toUpperCase(); }
-function saveRoom(data) { localStorage.setItem(getRoomKey(data.code), JSON.stringify(data)); }
-function loadRoom(code) { return JSON.parse(localStorage.getItem(getRoomKey(code)) || "null"); }
+const getRK = c => "QR_"+c.toUpperCase();
+const saveR = d => localStorage.setItem(getRK(d.code), JSON.stringify(d));
+const loadR = c => JSON.parse(localStorage.getItem(getRK(c))||"null");
 
-function selectRole(role) {
-  quizRole = role;
-  document.getElementById("quizRoleSelector").style.display = role ? "none" : "";
-  document.getElementById("hostPanel").style.display = role === "host" ? "" : "none";
-  document.getElementById("playerPanel").style.display = role === "player" ? "" : "none";
-  if (role === "host") {
-    document.getElementById("hostSetupCard").style.display = "";
-    document.getElementById("hostQuestionsCard").style.display = "none";
-    document.getElementById("hostControlsCard").style.display = "none";
-  }
-  if (role === "player") {
-    document.getElementById("playerJoinCard").style.display = "";
-    document.getElementById("playerWaitCard").style.display = "none";
-    document.getElementById("playerAnswerCard").style.display = "none";
-    document.getElementById("playerScoreCard").style.display = "none";
-  }
-}
-
-// ── HOST ──────────────────────────────────────────────────────────────────
-function generateCode() {
-  return Math.random().toString(36).substring(2,8).toUpperCase();
+function selectRole(r) {
+  qRole = r;
+  document.getElementById("quizRoleSelector").style.display = r ? "none" : "";
+  document.getElementById("hostPanel").style.display = r==="host" ? "" : "none";
+  document.getElementById("playerPanel").style.display = r==="player" ? "" : "none";
+  if (r==="host") { document.getElementById("hostSetupCard").style.display=""; document.getElementById("hostQCard").style.display="none"; document.getElementById("hostCtrlCard").style.display="none"; }
+  if (r==="player") { document.getElementById("pJoinCard").style.display=""; document.getElementById("pWaitCard").style.display="none"; document.getElementById("pAnswerCard").style.display="none"; document.getElementById("pScoreCard").style.display="none"; }
+  if (!r) { clearInterval(hPollInt); clearInterval(pPollInt); clearInterval(pTimerInt); }
 }
 
 function createQuizRoom() {
   const title = document.getElementById("hTitle").value.trim();
-  const category = document.getElementById("hCategory").value;
-  const timer = parseInt(document.getElementById("hTimer").value) || 30;
-  const context = document.getElementById("hContext").value.trim();
-  if (!title) { alert("Enter a quiz title!"); return; }
-
-  roomCode = generateCode();
-  roomData = {
-    code: roomCode, title, category, timer, context,
-    questions: [], players: {}, answers: {},
-    state: "lobby", // lobby | question | scoring | finished
-    currentQ: -1, createdAt: Date.now()
+  if (!title) { alert("Enter a title!"); return; }
+  qRoomCode = Math.random().toString(36).substring(2,8).toUpperCase();
+  qRoomData = {
+    code: qRoomCode, title,
+    category: document.getElementById("hCategory").value,
+    timer: parseInt(document.getElementById("hTimer").value)||30,
+    context: document.getElementById("hContext").value.trim(),
+    questions:[], players:{}, answers:{},
+    state:"lobby", currentQ:-1
   };
-  saveRoom(roomData);
-
-  document.getElementById("displayRoomCode").textContent = roomCode;
-  document.getElementById("hostSetupCard").style.display = "none";
-  document.getElementById("hostQuestionsCard").style.display = "";
-  document.getElementById("hostControlsCard").style.display = "";
-  renderQuestions();
-
-  // Poll for players joining
-  hostInterval = setInterval(() => {
-    roomData = loadRoom(roomCode);
-    if (!roomData) return;
-    const count = Object.keys(roomData.players).length;
-    document.getElementById("playerCountBadge").textContent = count + " player" + (count !== 1 ? "s" : "");
-    if (roomData.state === "scoring") {
-      document.getElementById("answerCount").textContent = Object.keys(roomData.answers).length;
-      renderLiveAnswers();
-    }
-  }, 1500);
-
-  document.getElementById("hostSetupStatus").innerHTML =
-    '<div class="status status-success">Room created! Share code <strong>' + roomCode + '</strong> with players.</div>';
+  saveR(qRoomData);
+  document.getElementById("displayCode").textContent = qRoomCode;
+  document.getElementById("hostSetupCard").style.display="none";
+  document.getElementById("hostQCard").style.display="";
+  document.getElementById("hostCtrlCard").style.display="";
+  renderHQList();
+  document.getElementById("hostSetupStatus").innerHTML='<div class="status status-success">Room <strong>'+qRoomCode+'</strong> created! Share with players.</div>';
+  hPollInt = setInterval(()=>{
+    qRoomData=loadR(qRoomCode);
+    if(!qRoomData) return;
+    const n=Object.keys(qRoomData.players).length;
+    document.getElementById("hPlayerCount").textContent=n+" player"+(n!==1?"s":"");
+    document.getElementById("hAnsCount").textContent=Object.keys(qRoomData.answers||{}).length;
+    renderHLiveAns();
+  },1500);
 }
 
-function addQuestion() {
-  const q = document.getElementById("newQ").value.trim();
-  const a = document.getElementById("newA").value.trim();
-  if (!q) { alert("Enter a question!"); return; }
-  roomData.questions.push({ q, modelAnswer: a, scores: {} });
-  saveRoom(roomData);
-  document.getElementById("newQ").value = "";
-  document.getElementById("newA").value = "";
-  renderQuestions();
+function addQ() {
+  const q=document.getElementById("newQ").value.trim();
+  const a=document.getElementById("newA").value.trim();
+  if(!q){alert("Enter a question!");return;}
+  qRoomData.questions.push({q,modelAnswer:a});
+  saveR(qRoomData);
+  document.getElementById("newQ").value="";
+  document.getElementById("newA").value="";
+  renderHQList();
 }
 
-function renderQuestions() {
-  const el = document.getElementById("questionsList");
-  if (!roomData.questions.length) {
-    el.innerHTML = '<p style="color:var(--muted);font-size:13px">No questions yet. Add some below!</p>';
+function renderHQList() {
+  const el=document.getElementById("hQList");
+  if(!qRoomData.questions.length){el.innerHTML='<p style="color:var(--muted);font-size:13px">No questions yet.</p>';return;}
+  el.innerHTML=qRoomData.questions.map((q,i)=>`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between"><div style="font-size:13px"><strong>${i+1}.</strong> ${q.q}</div><button onclick="removeQ(${i})" style="background:none;border:none;color:var(--red);cursor:pointer">×</button></div>`).join('');
+}
+
+function removeQ(i){qRoomData.questions.splice(i,1);saveR(qRoomData);renderHQList();}
+
+function renderHLiveAns(){
+  const el=document.getElementById("hLiveAns");
+  const ans=qRoomData.answers||{};
+  el.innerHTML=Object.entries(ans).map(([n,a])=>`<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:8px;margin-bottom:4px;font-size:12px"><strong>${n}</strong>: ${a.text.slice(0,60)}...</div>`).join('')||'<p style="color:var(--muted);font-size:12px">Waiting...</p>';
+}
+
+function hostStartRound(){
+  qRoomData=loadR(qRoomCode);
+  if(!qRoomData.questions.length){alert("Add questions first!");return;}
+  qIdx=qRoomData.currentQ+1;
+  if(qIdx>=qRoomData.questions.length){alert("No more questions!");return;}
+  qRoomData.currentQ=qIdx; qRoomData.state="question"; qRoomData.answers={};
+  saveR(qRoomData);
+  document.getElementById("hCurrQ").textContent=(qIdx+1)+". "+qRoomData.questions[qIdx].q;
+  document.getElementById("hStatus").textContent="Q"+(qIdx+1)+" — players answering...";
+  document.getElementById("hStartBtn").style.display="none";
+  document.getElementById("hScoreBtn").style.display="";
+  document.getElementById("hScoreDisplay").style.display="none";
+}
+
+async function hostShowScores(){
+  qRoomData=loadR(qRoomCode);
+  qRoomData.state="scoring"; saveR(qRoomData);
+  document.getElementById("hScoreDisplay").style.display="";
+  document.getElementById("hScores").innerHTML='<div class="status status-info"><span class="spinner"></span>AI scoring all answers...</div>';
+  document.getElementById("hScoreBtn").style.display="none";
+  const q=qRoomData.questions[qIdx];
+  const ans=qRoomData.answers||{};
+  if(!Object.keys(ans).length){
+    document.getElementById("hScores").innerHTML='<p style="color:var(--muted);font-size:13px">No answers submitted.</p>';
+    document.getElementById("hNextBtn").style.display=""; document.getElementById("hStartBtn").style.display="";
     return;
   }
-  el.innerHTML = roomData.questions.map((q,i) => `
-    <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <div style="font-size:13px;font-weight:600">${i+1}. ${q.q}</div>
-        ${q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">Model: ' + q.modelAnswer.slice(0,50) + '...</div>' : ''}
-      </div>
-      <button onclick="removeQuestion(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px">×</button>
-    </div>
-  `).join('');
-}
-
-function removeQuestion(i) {
-  roomData.questions.splice(i, 1);
-  saveRoom(roomData);
-  renderQuestions();
-}
-
-function startRound() {
-  roomData = loadRoom(roomCode);
-  if (!roomData.questions.length) { alert("Add at least one question first!"); return; }
-  currentQIndex = roomData.currentQ + 1;
-  if (currentQIndex >= roomData.questions.length) { alert("No more questions!"); return; }
-  roomData.currentQ = currentQIndex;
-  roomData.state = "question";
-  roomData.answers = {};
-  roomData.questionStarted = Date.now();
-  saveRoom(roomData);
-  const q = roomData.questions[currentQIndex];
-  document.getElementById("hostCurrentQ").textContent = (currentQIndex + 1) + ". " + q.q;
-  document.getElementById("hostGameStatus").textContent = "Question " + (currentQIndex+1) + " of " + roomData.questions.length + " — players answering...";
-  document.getElementById("startRoundBtn").style.display = "none";
-  document.getElementById("showScoresBtn").style.display = "";
-  document.getElementById("hostScoreDisplay").style.display = "none";
-  document.getElementById("liveAnswers").innerHTML = "";
-}
-
-function renderLiveAnswers() {
-  const el = document.getElementById("liveAnswers");
-  const answers = roomData.answers || {};
-  el.innerHTML = Object.entries(answers).map(([name, ans]) =>
-    '<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:8px;margin-bottom:6px;font-size:12px"><strong>' + name + '</strong>: ' + ans.text.slice(0,60) + '...</div>'
-  ).join('') || '<p style="color:var(--muted);font-size:12px">Waiting for answers...</p>';
-}
-
-async function showScores() {
-  roomData = loadRoom(roomCode);
-  roomData.state = "scoring";
-  saveRoom(roomData);
-  document.getElementById("hostScoreDisplay").style.display = "";
-  document.getElementById("hostScores").innerHTML = '<div class="status status-info"><span class="spinner"></span>AI is scoring all answers...</div>';
-  document.getElementById("showScoresBtn").style.display = "none";
-
-  const q = roomData.questions[currentQIndex];
-  const answers = roomData.answers || {};
-
-  if (!Object.keys(answers).length) {
-    document.getElementById("hostScores").innerHTML = '<p style="color:var(--muted);font-size:13px">No answers submitted.</p>';
-    document.getElementById("nextQBtn").style.display = "";
-    document.getElementById("startRoundBtn").style.display = "";
-    return;
-  }
-
   try {
-    const answerList = Object.entries(answers).map(([name, a]) => name + ": " + a.text).join("\n");
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 1000,
-        messages: [{
-          role: "user",
-          content: `You are a blockchain quiz judge. Score each answer from 0-100.
-
-REFERENCE DOCS / CONTEXT:
-${roomData.context || "General blockchain knowledge"}
-
-QUESTION: ${q.q}
-${q.modelAnswer ? "MODEL ANSWER: " + q.modelAnswer : ""}
-
-PLAYER ANSWERS:
-${answerList}
-
-Reply with JSON only, no markdown:
-{"scores": [{"name": "player name", "score": 0-100, "feedback": "one sentence"}]}`
-        }]
-      })
+    const ansList=Object.entries(ans).map(([n,a])=>n+": "+a.text).join("\n");
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:`You are a blockchain quiz judge. Score each answer 0-100.\n\nCONTEXT:\n${qRoomData.context||"General blockchain"}\n\nQUESTION: ${q.q}\n${q.modelAnswer?"MODEL ANSWER: "+q.modelAnswer:""}\n\nANSWERS:\n${ansList}\n\nReturn JSON only: {"scores":[{"name":"string","score":0,"feedback":"one sentence"}]}`}]})
     });
-    const data = await response.json();
-    const text = data.content[0].text.replace(/```json|```/g, '').trim();
-    const result = JSON.parse(text);
-
-    // Save scores to room
-    result.scores.forEach(s => {
-      if (roomData.players[s.name] !== undefined) {
-        roomData.players[s.name] = (roomData.players[s.name] || 0) + s.score;
-      }
-      if (roomData.answers[s.name]) {
-        roomData.answers[s.name].score = s.score;
-        roomData.answers[s.name].feedback = s.feedback;
-      }
+    const data=await res.json();
+    const result=JSON.parse(data.content[0].text.replace(/\`\`\`json|\`\`\`/g,'').trim());
+    result.scores.forEach(s=>{
+      if(qRoomData.players[s.name]!==undefined) qRoomData.players[s.name]=(qRoomData.players[s.name]||0)+s.score;
+      if(qRoomData.answers[s.name]){qRoomData.answers[s.name].score=s.score;qRoomData.answers[s.name].feedback=s.feedback;}
     });
-    roomData.state = "scored";
-    saveRoom(roomData);
+    qRoomData.state="scored"; saveR(qRoomData);
+    const sorted=result.scores.sort((a,b)=>b.score-a.score);
+    const medals=["🥇","🥈","🥉"];
+    document.getElementById("hScores").innerHTML=sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:var(--purple-light)">${s.score}/100</div></div>`).join('');
+    const hasMore=qIdx<qRoomData.questions.length-1;
+    document.getElementById("hNextBtn").style.display=hasMore?"":"none";
+    document.getElementById("hStartBtn").style.display=hasMore?"":"none";
+    if(!hasMore){qRoomData.state="finished";saveR(qRoomData);document.getElementById("hStatus").textContent="Quiz complete!";}
+  } catch(e){
+    document.getElementById("hScores").innerHTML='<div class="status status-error">Error: '+e.message+'</div>';
+    document.getElementById("hNextBtn").style.display="";
+  }
+}
 
-    // Display scores
-    const sorted = result.scores.sort((a,b) => b.score - a.score);
-    const medals = ["🥇","🥈","🥉"];
-    document.getElementById("hostScores").innerHTML = sorted.map((s,i) => `
-      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:8px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span>${medals[i] || "#"+(i+1)}</span>
-          <div>
-            <div style="font-weight:600;font-size:13px">${s.name}</div>
-            <div style="font-size:11px;color:var(--muted)">${s.feedback}</div>
+function hostNext(){
+  document.getElementById("hNextBtn").style.display="none";
+  document.getElementById("hScoreDisplay").style.display="none";
+  document.getElementById("hStartBtn").style.display="";
+  document.getElementById("hStatus").textContent="Ready for next question";
+}
+
+// ── PLAYER ───────────────────────────────────────────────────────────
+function joinRoom(){
+  pName=document.getElementById("pName").value.trim();
+  const code=document.getElementById("pCode").value.trim().toUpperCase();
+  if(!pName||!code){alert("Enter name and code!");return;}
+  const room=loadR(code);
+  if(!room){document.getElementById("joinStatus").innerHTML='<div class="status status-error">Room not found!</div>';return;}
+  qRoomCode=code; pScore=0; pAnswered=false;
+  room.players[pName]=0; saveR(room);
+  document.getElementById("pQuizTitle").textContent=room.title;
+  document.getElementById("pWaitInfo").textContent="Room: "+code+" — "+room.title;
+  document.getElementById("pJoinCard").style.display="none";
+  document.getElementById("pWaitCard").style.display="";
+  let lastQ=-1;
+  pPollInt=setInterval(()=>{
+    const r=loadR(qRoomCode);
+    if(!r) return;
+    if(r.state==="question"&&r.currentQ!==lastQ){lastQ=r.currentQ;pAnswered=false;showPQuestion(r);}
+    else if(r.state==="scored"){showPScores(r);}
+    else if(r.state==="finished"){clearInterval(pPollInt);showPScores(r);document.getElementById("pWaitNext").textContent="Quiz finished! 🎉";}
+  },1500);
+}
+
+function showPQuestion(room){
+  clearInterval(pTimerInt);
+  document.getElementById("pWaitCard").style.display="none";
+  document.getElementById("pScoreCard").style.display="none";
+  document.getElementById("pAnswerCard").style.display="";
+  const q=room.questions[room.currentQ];
+  document.getElementById("pQN").textContent=room.currentQ+1;
+  document.getElementById("pQText").textContent=q.q;
+  document.getElementById("pAnswerText").value="";
+  document.getElementById("pAnswerText").disabled=false;
+  document.getElementById("pSubmitBtn").disabled=false;
+  document.getElementById("pFeedback").innerHTML="";
+  pTimerSecs=room.timer||30;
+  document.getElementById("pTimerDisplay").textContent=pTimerSecs;
+  document.getElementById("pTimerBar").style.transition="none";
+  document.getElementById("pTimerBar").style.width="100%";
+  setTimeout(()=>{document.getElementById("pTimerBar").style.transition="width "+pTimerSecs+"s linear";document.getElementById("pTimerBar").style.width="0%";},100);
+  pTimerInt=setInterval(()=>{
+    pTimerSecs--;
+    document.getElementById("pTimerDisplay").textContent=pTimerSecs;
+    if(pTimerSecs<=0){clearInterval(pTimerInt);if(!pAnswered)autoSubmitP();}
+  },1000);
+}
+
+function submitPAnswer(){
+  if(pAnswered) return;
+  const ans=document.getElementById("pAnswerText").value.trim();
+  if(!ans){autoSubmitP();return;}
+  clearInterval(pTimerInt);
+  pAnswered=true;
+  document.getElementById("pAnswerText").disabled=true;
+  document.getElementById("pSubmitBtn").disabled=true;
+  const r=loadR(qRoomCode);
+  if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,time:Date.now()};saveR(r);}
+  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Submitted! Waiting for host to reveal scores...</div>';
+}
+
+function autoSubmitP(){
+  if(pAnswered) return;
+  pAnswered=true;
+  document.getElementById("pAnswerText").disabled=true;
+  document.getElementById("pSubmitBtn").disabled=true;
+  document.getElementById("pFeedback").innerHTML='<div class="status status-warning">⏰ Time up!</div>';
+}
+
+function showPScores(room){
+  document.getElementById("pAnswerCard").style.display="none";
+  document.getElementById("pScoreCard").style.display="";
+  const players=room.players||{};
+  const sorted=Object.entries(players).sort((a,b)=>b[1]-a[1]);
+  const medals=["🥇","🥈","🥉"];
+  const myAns=room.answers?.[pName];
+  let myHtml="";
+  if(myAns?.score!==undefined){
+    pScore=players[pName]||0;
+    document.getElementById("pTotalScore").textContent=pScore;
+    myHtml=`<div class="status status-info" style="margin-bottom:14px">This round: <strong>${myAns.score}/100</strong> — ${myAns.feedback||""}</div>`;
+  }
+  document.getElementById("pLeaderboard").innerHTML=myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;color:var(--purple-light)">${s}pts</span></div>`).join('');
+}
+
+</script>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --card: #13131a;
+    --border: #2a2a3a;
+    --purple: #7c3aed;
+    --purple-light: #a78bfa;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --red: #ef4444;
+    --text: #e2e8f0;
+    --muted: #64748b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; min-height: 100vh; }
+
+  /* Header */
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; backdrop-filter: blur(10px); }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 36px; height: 36px; background: var(--purple); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: white; }
+  .logo-text { font-size: 18px; font-weight: 700; background: linear-gradient(135deg, #a78bfa, #7c3aed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .logo-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+  #connectBtn { background: var(--purple); color: white; border: none; padding: 8px 20px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  #connectBtn:hover { background: #6d28d9; transform: translateY(-1px); }
+  #walletInfo { font-size: 13px; color: var(--purple-light); background: rgba(124,58,237,0.1); padding: 6px 14px; border-radius: 8px; border: 1px solid rgba(124,58,237,0.3); }
+
+  /* Layout */
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+  .hero { text-align: center; margin-bottom: 48px; }
+  .hero h1 { font-size: 42px; font-weight: 800; background: linear-gradient(135deg, #e2e8f0, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 12px; }
+  .hero p { color: var(--muted); font-size: 16px; max-width: 500px; margin: 0 auto 24px; }
+  .contract-badge { display: inline-flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--border); padding: 8px 16px; border-radius: 100px; font-size: 12px; font-family: monospace; color: var(--muted); }
+  .contract-badge span { color: var(--green); }
+
+  /* Phase indicator */
+  .phases { display: flex; gap: 8px; margin-bottom: 32px; overflow-x: auto; padding-bottom: 4px; }
+  .phase { flex: 1; min-width: 120px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; text-align: center; transition: all 0.2s; }
+  .phase.active { border-color: var(--purple); background: rgba(124,58,237,0.1); }
+  .phase-num { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .phase-name { font-size: 13px; font-weight: 600; }
+  .phase.active .phase-name { color: var(--purple-light); }
+
+  /* Grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media(max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+
+  /* Cards */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+  .card-header { padding: 20px 24px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .card-title { font-size: 15px; font-weight: 700; }
+  .card-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .card-body { padding: 20px 24px; }
+
+  /* Form elements */
+  label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; margin-top: 14px; }
+  label:first-child { margin-top: 0; }
+  input, textarea, select { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.2s; }
+  input:focus, textarea:focus { border-color: var(--purple); }
+  textarea { resize: vertical; min-height: 80px; }
+  .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* Buttons */
+  .btn { width: 100%; padding: 12px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; margin-top: 16px; }
+  .btn-primary { background: var(--purple); color: white; }
+  .btn-primary:hover { background: #6d28d9; transform: translateY(-1px); }
+  .btn-primary:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
+  .btn-green { background: var(--green); color: white; }
+  .btn-green:hover { background: #059669; }
+  .btn-amber { background: var(--amber); color: #000; }
+
+  /* Badges */
+  .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 100px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(16,185,129,0.15); color: var(--green); border: 1px solid rgba(16,185,129,0.3); }
+  .badge-purple { background: rgba(124,58,237,0.15); color: var(--purple-light); border: 1px solid rgba(124,58,237,0.3); }
+  .badge-amber { background: rgba(245,158,11,0.15); color: var(--amber); border: 1px solid rgba(245,158,11,0.3); }
+  .badge-red { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+
+  /* Status messages */
+  .status { margin-top: 12px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
+  .status-success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: var(--green); }
+  .status-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+  .status-info { background: rgba(124,58,237,0.1); border: 1px solid rgba(124,58,237,0.3); color: var(--purple-light); }
+  .status-warning { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--amber); }
+
+  /* Bounty list */
+  .bounty-item { background: rgba(255,255,255,0.02); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
+  .bounty-item:hover { border-color: var(--purple); background: rgba(124,58,237,0.05); }
+  .bounty-item.selected { border-color: var(--purple); background: rgba(124,58,237,0.08); }
+  .bounty-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  .bounty-meta { display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+
+  /* Salt box */
+  .salt-box { background: rgba(245,158,11,0.05); border: 1px solid rgba(245,158,11,0.3); border-radius: 10px; padding: 14px; margin-top: 12px; }
+  .salt-box-title { font-size: 12px; font-weight: 700; color: var(--amber); margin-bottom: 6px; }
+  .salt-value { font-family: monospace; font-size: 11px; color: var(--text); word-break: break-all; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; }
+
+  /* Full width span */
+  .full { grid-column: 1 / -1; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; background: rgba(255,255,255,0.04); padding: 4px; border-radius: 10px; margin-bottom: 20px; }
+  .tab { flex: 1; padding: 8px; border: none; background: none; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 7px; transition: all 0.2s; }
+  .tab.active { background: var(--purple); color: white; }
+
+  /* Loading spinner */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+  .mono { font-family: monospace; font-size: 12px; }
+  .stat { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .stat:last-child { border-bottom: none; }
+  .stat-label { font-size: 12px; color: var(--muted); }
+  .stat-value { font-size: 13px; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">B</div>
+    <div>
+      <div class="logo-text">Bounty Judge</div>
+      <div class="logo-sub">Privacy-Preserving · Ritual Chain</div>
+    </div>
+  </div>
+  <div id="walletSection">
+    <button id="connectBtn" onclick="connectWallet()">Connect Wallet</button>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <h1>AI Bounty Judge</h1>
+    <p>Submit answers privately. Reveal after the deadline. Let Ritual AI judge fairly.</p>
+    <div class="contract-badge">
+      Contract: <span>0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b</span>
+    </div>
+  </div>
+
+  <div class="phases">
+    <div class="phase active" id="phase0"><div class="phase-num">Phase 0</div><div class="phase-name">🏆 Create</div></div>
+    <div class="phase" id="phase1"><div class="phase-num">Phase 1</div><div class="phase-name">🔒 Commit</div></div>
+    <div class="phase" id="phase2"><div class="phase-num">Phase 2</div><div class="phase-name">🔓 Reveal</div></div>
+    <div class="phase" id="phase3"><div class="phase-num">Phase 3</div><div class="phase-name">🤖 Judge</div></div>
+    <div class="phase" id="phase4"><div class="phase-num">Phase 4</div><div class="phase-name">🎉 Finalize</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab('bounties')">Browse Bounties</button>
+    <button class="tab" onclick="showTab('create')">Create Bounty</button>
+    <button class="tab" onclick="showTab('participate')">Participate</button>
+    <button class="tab" onclick="showTab('quiz')" style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:white;border-radius:8px">🎯 Quiz Arena</button>
+  </div>
+
+  <!-- BROWSE TAB -->
+  <div id="tab-bounties">
+    <div class="grid">
+      <div class="card full">
+        <div class="card-header">
+          <div><div class="card-title">Active Bounties</div><div class="card-sub">Click a bounty to view details</div></div>
+          <button class="btn btn-primary" style="width:auto;margin:0;padding:8px 16px" onclick="loadBounties()">Refresh</button>
+        </div>
+        <div class="card-body">
+          <div id="bountyList"><p style="color:var(--muted);font-size:13px">Connect your wallet to load bounties.</p></div>
+        </div>
+      </div>
+
+      <div class="card full" id="bountyDetailCard" style="display:none">
+        <div class="card-header">
+          <div><div class="card-title" id="detailTitle">Bounty Details</div><div class="card-sub" id="detailSub"></div></div>
+          <span id="detailBadge" class="badge badge-green">Open</span>
+        </div>
+        <div class="card-body">
+          <div class="grid">
+            <div>
+              <div class="stat"><span class="stat-label">Reward</span><span class="stat-value" id="detailReward">-</span></div>
+              <div class="stat"><span class="stat-label">Commit Deadline</span><span class="stat-value" id="detailSubDL">-</span></div>
+              <div class="stat"><span class="stat-label">Reveal Deadline</span><span class="stat-value" id="detailRevDL">-</span></div>
+              <div class="stat"><span class="stat-label">Submissions</span><span class="stat-value" id="detailCount">-</span></div>
+            </div>
+            <div>
+              <label>Rubric</label>
+              <div id="detailRubric" style="font-size:13px;color:var(--muted);line-height:1.6"></div>
+            </div>
+          </div>
+          <div id="detailActions" style="margin-top:16px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CREATE TAB -->
+  <div id="tab-create" style="display:none">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">Create a Bounty</div><div class="card-sub">Fund a prize and set two deadlines</div></div></div>
+        <div class="card-body">
+          <label>Title</label>
+          <input id="cTitle" placeholder="Best smart contract optimization..."/>
+          <label>Rubric <span style="color:var(--muted);font-weight:400">(how AI will judge)</span></label>
+          <textarea id="cRubric" placeholder="Correctness 50%, gas efficiency 30%, clarity 20%..."></textarea>
+          <label>Commit Deadline</label>
+          <input id="cSubDL" type="datetime-local"/>
+          <label>Reveal Deadline</label>
+          <input id="cRevDL" type="datetime-local"/>
+          <label>Prize (RITUAL)</label>
+          <input id="cReward" type="number" min="0.001" step="0.001" placeholder="1.0"/>
+          <button class="btn btn-primary" onclick="createBounty()">🏆 Create Bounty</button>
+          <div id="createStatus"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">How It Works</div></div></div>
+        <div class="card-body">
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">1</div>
+              <div><div style="font-weight:600;font-size:13px">Create & Fund</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Set your bounty question, rubric, and two deadlines. Prize locked in contract.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">2</div>
+              <div><div style="font-weight:600;font-size:13px">Participants Commit</div><div style="font-size:12px;color:var(--muted);margin-top:2px">They submit only a hash — answer stays completely hidden.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">3</div>
+              <div><div style="font-weight:600;font-size:13px">Reveal Phase</div><div style="font-size:12px;color:var(--muted);margin-top:2px">After commit deadline, participants reveal. Contract verifies the hash matches.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--purple);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">4</div>
+              <div><div style="font-weight:600;font-size:13px">Ritual AI Judges</div><div style="font-size:12px;color:var(--muted);margin-top:2px">One batch LLM call judges all revealed answers against your rubric.</div></div>
+            </div>
+            <div style="display:flex;gap:12px;align-items:flex-start">
+              <div style="width:28px;height:28px;background:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex-shrink:0">5</div>
+              <div><div style="font-weight:600;font-size:13px">Winner Paid</div><div style="font-size:12px;color:var(--muted);margin-top:2px">You finalize the winner and they receive the full prize instantly.</div></div>
+            </div>
           </div>
         </div>
-        <div style="font-size:16px;font-weight:700;color:var(--purple-light)">${s.score}/100</div>
       </div>
-    `).join('');
+    </div>
+  </div>
 
-    const hasMore = currentQIndex < roomData.questions.length - 1;
-    document.getElementById("nextQBtn").style.display = hasMore ? "" : "none";
-    document.getElementById("startRoundBtn").style.display = hasMore ? "" : "none";
-    if (!hasMore) {
-      document.getElementById("hostGameStatus").textContent = "Quiz complete! All questions done.";
-      roomData.state = "finished";
-      saveRoom(roomData);
+  <!-- PARTICIPATE TAB -->
+  <div id="tab-participate" style="display:none">
+    <div class="grid">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">🔒 Submit Commitment</div><div class="card-sub">Your answer stays hidden until reveal phase</div></div></div>
+        <div class="card-body">
+          <label>Bounty ID</label>
+          <input id="pBountyId" type="number" placeholder="1" min="1"/>
+          <label>Your Answer</label>
+          <textarea id="pAnswer" placeholder="Write your answer here..."></textarea>
+          <div class="hint">Your answer will NOT be stored on-chain yet — only its hash.</div>
+          <button class="btn btn-primary" onclick="submitCommitment()">🔒 Submit Commitment</button>
+          <div id="commitStatus"></div>
+          <div id="saltBox" style="display:none" class="salt-box">
+            <div class="salt-box-title">⚠️ SAVE YOUR SALT — You need this to reveal!</div>
+            <div class="salt-value" id="saltValue"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">🔓 Reveal Answer</div><div class="card-sub">After commit deadline passes</div></div></div>
+        <div class="card-body">
+          <label>Bounty ID</label>
+          <input id="rBountyId" type="number" placeholder="1" min="1"/>
+          <label>Your Original Answer</label>
+          <textarea id="rAnswer" placeholder="Must match your committed answer exactly..."></textarea>
+          <label>Your Salt</label>
+          <input id="rSalt" placeholder="0x... (from when you committed)" class="mono"/>
+          <button class="btn btn-green" onclick="revealAnswer()">🔓 Reveal Answer</button>
+          <div id="revealStatus"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- QUIZ ARENA TAB -->
+  <div id="tab-quiz" style="display:none">
+    <div id="quizRoleSelector">
+      <div class="grid" style="max-width:600px;margin:0 auto">
+        <div class="card" style="cursor:pointer" onclick="selectRole('host')">
+          <div class="card-body" style="text-align:center;padding:32px">
+            <div style="font-size:48px;margin-bottom:12px">🎙️</div>
+            <div style="font-size:17px;font-weight:800;margin-bottom:8px">I'm a Host</div>
+            <div style="font-size:13px;color:var(--muted)">Create a quiz room, set questions with Ritual docs context, control rounds, AI scores all answers</div>
+          </div>
+        </div>
+        <div class="card" style="cursor:pointer" onclick="selectRole('player')">
+          <div class="card-body" style="text-align:center;padding:32px">
+            <div style="font-size:48px;margin-bottom:12px">🎮</div>
+            <div style="font-size:17px;font-weight:800;margin-bottom:8px">I'm a Player</div>
+            <div style="font-size:13px;color:var(--muted)">Join with a room code, answer questions before timer runs out, climb the leaderboard</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HOST -->
+    <div id="hostPanel" style="display:none">
+      <div class="grid">
+        <div class="card" id="hostSetupCard">
+          <div class="card-header">
+            <div><div class="card-title">🎙️ Create Quiz Room</div></div>
+            <button onclick="selectRole(null)" class="btn btn-outline btn-sm">← Back</button>
+          </div>
+          <div class="card-body">
+            <label>Quiz Title</label>
+            <input id="hTitle" placeholder="Ritual Chain Fundamentals"/>
+            <label>Category</label>
+            <select id="hCategory" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:10px;padding:10px 14px;color:var(--text);font-size:14px;outline:none">
+              <option>Ritual Chain</option>
+              <option>Solidity & Smart Contracts</option>
+              <option>DeFi & Web3</option>
+              <option>AI on Blockchain</option>
+              <option>General Blockchain</option>
+            </select>
+            <label>Seconds per question</label>
+            <input id="hTimer" type="number" value="30" min="10" max="120"/>
+            <label>AI Context (paste Ritual docs here)</label>
+            <textarea id="hContext" rows="6" placeholder="Paste Ritual documentation, whitepaper excerpts, or any reference the AI should use when scoring answers..."></textarea>
+            <div class="hint">The AI will use this to accurately score player answers.</div>
+            <button class="btn btn-primary" onclick="createQuizRoom()">Create Room 🚀</button>
+            <div id="hostSetupStatus"></div>
+          </div>
+        </div>
+
+        <div class="card" id="hostQCard" style="display:none">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Questions</div>
+              <div class="card-sub">Room: <strong id="displayCode" style="color:var(--purple-light);font-size:16px;letter-spacing:2px"></strong></div>
+            </div>
+            <span id="hPlayerCount" class="badge badge-green">0 players</span>
+          </div>
+          <div class="card-body">
+            <div id="hQList" style="margin-bottom:14px"></div>
+            <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:10px;padding:14px">
+              <label style="margin-top:0">New Question</label>
+              <input id="newQ" placeholder="Question..." style="margin-bottom:8px"/>
+              <input id="newA" placeholder="Model answer (AI reference)..." style="margin-bottom:8px"/>
+              <button class="btn btn-primary" onclick="addQ()" style="margin-top:0;padding:8px 16px;width:auto">+ Add</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card full" id="hostCtrlCard" style="display:none">
+          <div class="card-header">
+            <div><div class="card-title">🎮 Game Controls</div><div class="card-sub" id="hStatus">Ready</div></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn btn-primary btn-sm" id="hStartBtn" onclick="hostStartRound()">▶ Start Round</button>
+              <button class="btn btn-outline btn-sm" id="hScoreBtn" onclick="hostShowScores()" style="display:none">📊 Score</button>
+              <button class="btn btn-outline btn-sm" id="hNextBtn" onclick="hostNext()" style="display:none">→ Next</button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="grid">
+              <div>
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Current Question</div>
+                <div id="hCurrQ" style="font-size:15px;font-weight:600;background:rgba(255,255,255,0.04);padding:14px;border-radius:10px;min-height:60px">-</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Live Answers (<span id="hAnsCount">0</span>)</div>
+                <div id="hLiveAns" style="max-height:180px;overflow-y:auto"></div>
+              </div>
+            </div>
+            <div id="hScoreDisplay" style="margin-top:16px;display:none">
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-bottom:8px">AI Scores</div>
+              <div id="hScores"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PLAYER -->
+    <div id="playerPanel" style="display:none">
+      <div class="grid">
+        <div class="card" id="pJoinCard">
+          <div class="card-header">
+            <div><div class="card-title">🎮 Join Quiz</div></div>
+            <button onclick="selectRole(null)" class="btn btn-outline btn-sm">← Back</button>
+          </div>
+          <div class="card-body">
+            <label>Your Name</label>
+            <input id="pName" placeholder="web3aunty"/>
+            <label>Room Code</label>
+            <input id="pCode" placeholder="ABC123" style="font-size:22px;font-weight:700;text-align:center;letter-spacing:4px;text-transform:uppercase"/>
+            <button class="btn btn-primary" onclick="joinRoom()">Join 🚀</button>
+            <div id="joinStatus"></div>
+          </div>
+        </div>
+
+        <div class="card" id="pWaitCard" style="display:none">
+          <div class="card-body" style="text-align:center;padding:40px">
+            <div style="font-size:48px;margin-bottom:16px">⏳</div>
+            <div style="font-size:16px;font-weight:700;margin-bottom:8px">Waiting for host...</div>
+            <div id="pWaitInfo" style="font-size:13px;color:var(--muted)"></div>
+          </div>
+        </div>
+
+        <div class="card full" id="pAnswerCard" style="display:none">
+          <div class="card-header">
+            <div><div class="card-title" id="pQuizTitle">Quiz</div><div class="card-sub">Q<span id="pQN">1</span></div></div>
+            <div style="display:flex;gap:8px">
+              <span class="badge badge-green">Score: <span id="pTotalScore">0</span></span>
+              <span class="badge badge-amber">⏱ <span id="pTimerDisplay">30</span>s</span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div style="background:var(--border);border-radius:4px;height:6px;margin-bottom:20px">
+              <div id="pTimerBar" style="background:var(--purple);height:100%;border-radius:4px;width:100%;transition:width linear"></div>
+            </div>
+            <div id="pQText" style="font-size:16px;font-weight:700;line-height:1.5;margin-bottom:16px;background:rgba(255,255,255,0.04);padding:16px;border-radius:10px">Loading...</div>
+            <textarea id="pAnswerText" rows="4" placeholder="Type your answer here..."></textarea>
+            <button class="btn btn-primary" onclick="submitPAnswer()" id="pSubmitBtn">Submit ✓</button>
+            <div id="pFeedback"></div>
+          </div>
+        </div>
+
+        <div class="card full" id="pScoreCard" style="display:none">
+          <div class="card-header"><div><div class="card-title">📊 Leaderboard</div></div></div>
+          <div class="card-body">
+            <div id="pLeaderboard"></div>
+            <div id="pWaitNext" style="text-align:center;margin-top:12px;font-size:13px;color:var(--muted)">Waiting for host to continue...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const CONTRACT_ADDRESS = "0xC7d598a10DB4300CB2634f25A62b816bCBd1Ea4b";
+const RITUAL_WALLET = "0x532F0dF0896F353d8C3DD8cc134e8129DA2a3948";
+const ABI = [
+  "function nextBountyId() view returns (uint256)",
+  "function getBounty(uint256) view returns (tuple(address owner, string title, string rubric, uint256 reward, uint256 submissionDeadline, uint256 revealDeadline, bool judged, bool finalized, uint256 submissionCount, uint256 winnerIndex, bytes aiReview))",
+  "function createBounty(string, string, uint256, uint256) payable returns (uint256)",
+  "function submitCommitment(uint256, bytes32)",
+  "function revealAnswer(uint256, string, bytes32)",
+  "function computeCommitment(string, bytes32, address, uint256) view returns (bytes32)",
+  "function judgeAll(uint256, bytes)",
+  "function finalizeWinner(uint256, uint256)",
+  // RitualWallet
+  "function deposit(uint256 lockDuration) external payable",
+  "function balanceOf(address) view returns (uint256)",
+];
+
+let provider, signer, contract, ritualWallet, userAddress;
+
+async function connectWallet() {
+  if (!window.ethereum) { alert("Install MetaMask!"); return; }
+  try {
+    await window.ethereum.request({ method: "eth_requestAccounts" });
+    try {
+      await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x7BB" }] });
+    } catch(e) {
+      await window.ethereum.request({ method: "wallet_addEthereumChain", params: [{
+        chainId: "0x7BB", chainName: "Ritual Chain",
+        rpcUrls: ["https://rpc.ritualfoundation.org"],
+        nativeCurrency: { name: "CRAT", symbol: "CRAT", decimals: 18 }
+      }] });
     }
-  } catch(e) {
-    document.getElementById("hostScores").innerHTML = '<div class="status status-error">Scoring error: ' + e.message + '</div>';
-    document.getElementById("nextQBtn").style.display = "";
+    provider = new ethers.BrowserProvider(window.ethereum, {
+      chainId: 0x7BB,
+      name: "ritual"
+    });
+    signer = await provider.getSigner();
+    userAddress = await signer.getAddress();
+    contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    ritualWallet = new ethers.Contract(RITUAL_WALLET, ABI, signer);
+    document.getElementById("walletSection").innerHTML = `<div id="walletInfo">✓ ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
+    // Show RitualWallet balance
+    const rwBal = await ritualWallet.balanceOf(userAddress);
+    const balEth = ethers.formatEther(rwBal);
+    if (parseFloat(balEth) === 0) {
+      const notice = document.createElement("div");
+      notice.style = "position:fixed;bottom:20px;right:20px;background:#13131a;border:1px solid rgba(245,158,11,0.4);color:#f59e0b;padding:12px 16px;border-radius:10px;font-size:12px;z-index:999;max-width:280px";
+      notice.innerHTML = `⚠️ RitualWallet balance: 0 CRAT<br><small>Fund it to enable AI judging</small><br><button onclick="depositRitualWallet();this.parentElement.remove()" style="margin-top:8px;background:#f59e0b;color:#000;border:none;padding:6px 12px;border-radius:6px;font-weight:700;cursor:pointer;width:100%">Deposit 0.1 CRAT</button>`;
+      document.body.appendChild(notice);
+      setTimeout(() => notice.remove(), 10000);
+    }
+    loadBounties();
+  } catch(e) { console.error(e); }
+}
+
+async function loadBounties() {
+  if (!contract) { return; }
+  const list = document.getElementById("bountyList");
+  list.innerHTML = '<p style="color:var(--muted);font-size:13px"><span class="spinner"></span>Loading...</p>';
+  try {
+    const nextId = await contract.nextBountyId();
+    if (nextId == 1n) { list.innerHTML = '<p style="color:var(--muted);font-size:13px">No bounties yet. Create one!</p>'; return; }
+    list.innerHTML = "";
+    for (let i = 1; i < nextId; i++) {
+      const b = await contract.getBounty(i);
+      const now = Date.now() / 1000;
+      const subDL = Number(b.submissionDeadline);
+      const revDL = Number(b.revealDeadline);
+      let status = "🟢 Commit Phase";
+      let badgeClass = "badge-green";
+      if (b.finalized) { status = "✅ Finalized"; badgeClass = "badge-purple"; }
+      else if (b.judged) { status = "🤖 Judged"; badgeClass = "badge-purple"; }
+      else if (now > revDL) { status = "⏳ Ready to Judge"; badgeClass = "badge-amber"; }
+      else if (now > subDL) { status = "🔓 Reveal Phase"; badgeClass = "badge-amber"; }
+      const reward = ethers.formatEther(b.reward);
+      const div = document.createElement("div");
+      div.className = "bounty-item";
+      div.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div class="bounty-title">#${i} ${b.title}</div>
+          <span class="badge ${badgeClass}">${status}</span>
+        </div>
+        <div class="bounty-meta">
+          <span>💰 ${reward} CRAT</span>
+          <span>📝 ${b.submissionCount} commits</span>
+          <span>📅 Commit: ${new Date(subDL*1000).toLocaleString()}</span>
+        </div>`;
+      div.onclick = () => showBountyDetail(i, b, status, badgeClass);
+      list.appendChild(div);
+    }
+  } catch(e) { list.innerHTML = `<p style="color:var(--red);font-size:13px">Error: ${e.message}</p>`; }
+}
+
+async function showBountyDetail(id, b, status, badgeClass) {
+  document.querySelectorAll(".bounty-item").forEach(el => el.classList.remove("selected"));
+  event.currentTarget.classList.add("selected");
+  document.getElementById("bountyDetailCard").style.display = "block";
+  document.getElementById("detailTitle").textContent = `#${id} ${b.title}`;
+  document.getElementById("detailSub").textContent = `Owner: ${b.owner.slice(0,6)}...${b.owner.slice(-4)}`;
+  document.getElementById("detailBadge").className = `badge ${badgeClass}`;
+  document.getElementById("detailBadge").textContent = status;
+  document.getElementById("detailReward").textContent = ethers.formatEther(b.reward) + " CRAT";
+  document.getElementById("detailSubDL").textContent = new Date(Number(b.submissionDeadline)*1000).toLocaleString();
+  document.getElementById("detailRevDL").textContent = new Date(Number(b.revealDeadline)*1000).toLocaleString();
+  document.getElementById("detailCount").textContent = b.submissionCount.toString();
+  document.getElementById("detailRubric").textContent = b.rubric;
+
+  const now = Date.now() / 1000;
+  const subDL = Number(b.submissionDeadline);
+  const revDL = Number(b.revealDeadline);
+  const isOwner = userAddress && b.owner.toLowerCase() === userAddress.toLowerCase();
+  let actions = "";
+  if (!b.judged && !b.finalized && now < subDL) {
+    actions = `<div class="status status-info">🔒 Commit phase open — go to Participate tab to submit!</div>`;
+  } else if (!b.judged && !b.finalized && now >= subDL && now < revDL) {
+    actions = `<div class="status status-warning">🔓 Reveal phase open — go to Participate tab to reveal!</div>`;
+  } else if (!b.judged && !b.finalized && now >= revDL && isOwner) {
+    actions = `
+      <button class="btn btn-amber" onclick="judgeAll(${id}, {title:'${b.title.replace(/'/g,"\\'")}', rubric:'${b.rubric.replace(/'/g,"\\'")}'})" style="margin-bottom:8px">🤖 Judge All (Owner Only)</button>
+      <button class="btn btn-outline" onclick="depositRitualWallet()" style="margin-top:4px;font-size:12px">+ Fund RitualWallet</button>
+    `;
+  } else if (b.judged && !b.finalized && isOwner) {
+    actions = `<label>Winner Index</label><input id="winnerIdx" type="number" min="0" placeholder="0"/><button class="btn btn-green" onclick="finalizeWinner(${id})">🏆 Finalize Winner</button>`;
+  } else if (b.finalized) {
+    actions = `<div class="status status-success">🎉 Bounty finalized! Winner: submission #${b.winnerIndex}</div>`;
   }
+  document.getElementById("detailActions").innerHTML = actions;
+  document.getElementById("bountyDetailCard").scrollIntoView({behavior:"smooth", block:"nearest"});
 }
 
-function nextQuestion() {
-  document.getElementById("nextQBtn").style.display = "none";
-  document.getElementById("hostScoreDisplay").style.display = "none";
-  document.getElementById("startRoundBtn").style.display = "";
-  document.getElementById("hostGameStatus").textContent = "Ready for next question";
+async function createBounty() {
+  if (!contract) { alert("Connect wallet first!"); return; }
+  const title = document.getElementById("cTitle").value.trim();
+  const rubric = document.getElementById("cRubric").value.trim();
+  const reward = document.getElementById("cReward").value;
+  if (!title || !rubric || !reward) { alert("Fill all fields!"); return; }
+  // Ritual Chain block.timestamp is in milliseconds
+  const block = await provider.getBlock("latest");
+  const blockTs = block.timestamp;
+  const subDL = BigInt(blockTs + 2 * 60 * 60 * 1000);  // +2 hours
+  const revDL = BigInt(blockTs + 4 * 60 * 60 * 1000);  // +4 hours
+  const status = document.getElementById("createStatus");
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Creating bounty...</div>';
+  try {
+    const tx = await contract.createBounty(title, rubric, subDL, revDL, { value: ethers.parseEther(reward.trim()) });
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    const receipt = await tx.wait();
+    status.innerHTML = `<div class="status status-success">✅ Bounty created! Tx: ${receipt.hash.slice(0,10)}...</div>`;
+    loadBounties();
+  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
 }
 
-function endQuiz() {
-  clearInterval(hostInterval);
-  if (roomCode) {
-    const rd = loadRoom(roomCode);
-    if (rd) { rd.state = "finished"; saveRoom(rd); }
-  }
-  selectRole(null);
+async function submitCommitment() {
+  if (!contract) { alert("Connect wallet first!"); return; }
+  const bountyId = document.getElementById("pBountyId").value;
+  const answer = document.getElementById("pAnswer").value.trim();
+  if (!bountyId || !answer) { alert("Fill all fields!"); return; }
+  const salt = ethers.hexlify(ethers.randomBytes(32));
+  const commitment = await contract.computeCommitment(answer, salt, userAddress, bountyId);
+  const status = document.getElementById("commitStatus");
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting commitment...</div>';
+  try {
+    const tx = await contract.submitCommitment(bountyId, commitment);
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    await tx.wait();
+    status.innerHTML = '<div class="status status-success">✅ Commitment submitted! Save your salt below.</div>';
+    document.getElementById("saltBox").style.display = "block";
+    document.getElementById("saltValue").textContent = salt;
+    document.getElementById("pAnswer").value = "";
+  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
 }
 
-// ── PLAYER ────────────────────────────────────────────────────────────────
-function joinRoom() {
-  playerName = document.getElementById("pName").value.trim();
-  const code = document.getElementById("pRoomCode").value.trim().toUpperCase();
-  if (!playerName || !code) { alert("Enter your name and room code!"); return; }
-  const room = loadRoom(code);
-  if (!room) {
-    document.getElementById("joinStatus").innerHTML = '<div class="status status-error">Room not found. Check the code!</div>';
+async function revealAnswer() {
+  if (!contract) { alert("Connect wallet first!"); return; }
+  const bountyId = document.getElementById("rBountyId").value;
+  const answer = document.getElementById("rAnswer").value.trim();
+  const salt = document.getElementById("rSalt").value.trim();
+  if (!bountyId || !answer || !salt) { alert("Fill all fields!"); return; }
+  const status = document.getElementById("revealStatus");
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Revealing answer...</div>';
+  try {
+    const tx = await contract.revealAnswer(bountyId, answer, salt);
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
+    await tx.wait();
+    status.innerHTML = '<div class="status status-success">✅ Answer revealed! You are now eligible for judging.</div>';
+  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+}
+
+async function judgeAll(bountyId, bountyData) {
+  if (!contract) { alert("Connect wallet first!"); return; }
+
+  // Check RitualWallet balance
+  const balance = await ritualWallet.balanceOf(userAddress);
+  if (balance === 0n) {
+    const deposit = confirm("Your RitualWallet balance is 0. You need to deposit CRAT to pay for LLM compute.\n\nDeposit 0.1 CRAT now?");
+    if (deposit) await depositRitualWallet();
     return;
   }
-  roomCode = code;
-  room.players[playerName] = 0;
-  saveRoom(room);
-  playerScore = 0;
-  document.getElementById("pQuizTitle").textContent = room.title;
-  document.getElementById("waitRoomInfo").textContent = "Room: " + room.code + " — " + room.title;
-  document.getElementById("playerJoinCard").style.display = "none";
-  document.getElementById("playerWaitCard").style.display = "";
 
-  // Poll for game state
-  let lastQ = -1;
-  playerInterval = setInterval(() => {
-    const r = loadRoom(roomCode);
-    if (!r) return;
-    const count = Object.keys(r.players).length;
-    document.getElementById("playerCount").textContent = count + " player" + (count !== 1 ? "s" : "") + " in room";
+  // Build the LLM batch prompt from revealed answers
+  const st = document.getElementById("dActions");
+  st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Loading revealed answers...</div>';
 
-    if (r.state === "question" && r.currentQ !== lastQ) {
-      lastQ = r.currentQ;
-      hasAnswered = false;
-      showPlayerQuestion(r);
-    } else if ((r.state === "scored" || r.state === "scoring") && !hasAnswered) {
-      // show waiting
-    } else if (r.state === "scored") {
-      showPlayerScores(r);
-    } else if (r.state === "finished") {
-      clearInterval(playerInterval);
-      showPlayerScores(r);
-      document.getElementById("nextQNotice").textContent = "Quiz finished! Thanks for playing 🎉";
+  try {
+    const [submitters, answers] = await contract.getRevealedAnswers(bountyId);
+    if (submitters.length === 0) {
+      st.innerHTML = '<div class="status status-error">No revealed answers yet. Participants must reveal first.</div>';
+      return;
     }
-  }, 1500);
-}
 
-function showPlayerQuestion(room) {
-  clearInterval(playerTimerInterval);
-  document.getElementById("playerWaitCard").style.display = "none";
-  document.getElementById("playerScoreCard").style.display = "none";
-  document.getElementById("playerAnswerCard").style.display = "";
-  document.getElementById("playerScoreCard").style.display = "none";
+    // Build batch prompt
+    const submissions = submitters.map((s, i) => `[${i}] ${s.slice(0,6)}...: ${answers[i]}`).join("\n\n");
+    const prompt = `You are an impartial bounty judge.\n\nBounty: ${bountyData.title}\nRubric: ${bountyData.rubric}\n\nSubmissions:\n${submissions}\n\nReturn JSON only: {"winnerIndex": number, "ranking": [{"index": number, "score": number, "reason": string}], "summary": string}`;
 
-  const q = room.questions[room.currentQ];
-  document.getElementById("pQuestion").textContent = q.q;
-  document.getElementById("pQNum").textContent = room.currentQ + 1;
-  document.getElementById("pAnswer").value = "";
-  document.getElementById("pAnswer").disabled = false;
-  document.getElementById("pSubmitBtn").disabled = false;
-  document.getElementById("pFeedback").innerHTML = "";
+    // Encode as Ritual LLM input
+    const messages = JSON.stringify([
+      { role: "system", content: "You are an impartial bounty judge. Return only valid JSON, no markdown." },
+      { role: "user", content: prompt }
+    ]);
 
-  timerSeconds = room.timer || 30;
-  document.getElementById("pTimer").textContent = timerSeconds;
-  document.getElementById("pProgressFill").style.transition = "none";
-  document.getElementById("pProgressFill").style.width = "100%";
-  setTimeout(() => {
-    document.getElementById("pProgressFill").style.transition = "width " + timerSeconds + "s linear";
-    document.getElementById("pProgressFill").style.width = "0%";
-  }, 100);
+    // ABI encode the LLM request (matches Ritual precompile format)
+    const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+    const llmInput = abiCoder.encode(
+      ["address","bytes[]","uint256","bytes[]","bytes","string","string","int256","string","bool","int256","string","string","uint256","bool","int256","string","bytes","int256","string","string","bool","int256","bytes","bytes","int256","int256","string","bool","tuple(string,string,string)"],
+      [
+        "0x0000000000000000000000000000000000000000", // executor
+        [], 0n, [], "0x", messages,
+        "zai-org/GLM-4.7-FP8", 0n, "", false, 8192n,
+        "", "", 1n, false, 0n, "low", "0x", -1n,
+        "", "", false, 100n, "0x", "0x", -1n, 1000n, "", false,
+        ["", "", ""]
+      ]
+    );
 
-  playerTimerInterval = setInterval(() => {
-    timerSeconds--;
-    document.getElementById("pTimer").textContent = timerSeconds;
-    if (timerSeconds <= 0) {
-      clearInterval(playerTimerInterval);
-      if (!hasAnswered) autoPlayerSubmit();
-    }
-  }, 1000);
-}
-
-function submitPlayerAnswer() {
-  if (hasAnswered) return;
-  const answer = document.getElementById("pAnswer").value.trim();
-  if (!answer) { autoPlayerSubmit(); return; }
-  clearInterval(playerTimerInterval);
-  hasAnswered = true;
-  document.getElementById("pAnswer").disabled = true;
-  document.getElementById("pSubmitBtn").disabled = true;
-
-  const room = loadRoom(roomCode);
-  if (room) {
-    room.answers = room.answers || {};
-    room.answers[playerName] = { text: answer, time: Date.now() };
-    saveRoom(room);
+    st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Submitting to Ritual LLM...</div>';
+    const tx = await contract.judgeAll(bountyId, llmInput);
+    st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for Ritual TEE response...</div>';
+    const receipt = await tx.wait();
+    st.innerHTML = `<div class="status status-success">✅ Judging complete! Tx: ${receipt.hash.slice(0,10)}... — Refresh to see AI verdict.</div>`;
+    loadBounties();
+  } catch(e) {
+    st.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`;
   }
-  document.getElementById("pFeedback").innerHTML = '<div class="status status-success">✓ Answer submitted! Waiting for host to reveal scores...</div>';
 }
 
-function autoPlayerSubmit() {
-  if (hasAnswered) return;
-  hasAnswered = true;
-  document.getElementById("pAnswer").disabled = true;
-  document.getElementById("pSubmitBtn").disabled = true;
-  document.getElementById("pFeedback").innerHTML = '<div class="status status-warning">⏰ Time's up! No answer submitted.</div>';
-}
-
-function showPlayerScores(room) {
-  document.getElementById("playerAnswerCard").style.display = "none";
-  document.getElementById("playerScoreCard").style.display = "";
-
-  const players = room.players || {};
-  const sorted = Object.entries(players).sort((a,b) => b[1]-a[1]);
-  const medals = ["🥇","🥈","🥉"];
-
-  const myAnswer = room.answers?.[playerName];
-  let myScoreHtml = "";
-  if (myAnswer?.score !== undefined) {
-    playerScore = players[playerName] || 0;
-    document.getElementById("pScore").textContent = playerScore;
-    myScoreHtml = `<div class="status status-info" style="margin-bottom:16px">
-      Your score this round: <strong>${myAnswer.score}/100</strong> — ${myAnswer.feedback || ""}
-    </div>`;
+async function depositRitualWallet() {
+  if (!ritualWallet) { alert("Connect wallet first!"); return; }
+  try {
+    const tx = await ritualWallet.deposit(0, { value: ethers.parseEther("0.1") });
+    await tx.wait();
+    alert("✅ Deposited 0.1 CRAT into RitualWallet! Now try judgeAll again.");
+  } catch(e) {
+    alert("Error: " + (e.reason || e.message));
   }
+}
 
-  document.getElementById("playerLeaderboard").innerHTML = myScoreHtml + sorted.map(([name, score], i) => `
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${name===playerName?'rgba(124,58,237,0.1)':'rgba(255,255,255,0.02)'};border:1px solid ${name===playerName?'rgba(124,58,237,0.4)':'var(--border)'};border-radius:8px;margin-bottom:8px">
-      <div style="display:flex;align-items:center;gap:10px">
-        <span>${medals[i] || "#"+(i+1)}</span>
-        <span style="font-weight:${name===playerName?700:400};font-size:14px">${name}${name===playerName?' (you)':''}</span>
-      </div>
-      <span style="font-weight:700;color:var(--purple-light)">${score} pts</span>
-    </div>
-  `).join('');
+async function finalizeWinner(bountyId) {
+  if (!contract) return;
+  const idx = document.getElementById("winnerIdx").value;
+  const status = document.getElementById("detailActions");
+  try {
+    const tx = await contract.finalizeWinner(bountyId, idx);
+    await tx.wait();
+    alert("Winner finalized!");
+    loadBounties();
+  } catch(e) { alert("Error: " + (e.reason || e.message)); }
+}
+
+function showTab(tab) {
+  ["bounties","create","participate","quiz"].forEach(t => {
+    document.getElementById("tab-" + t).style.display = t === tab ? "" : "none";
+  });
+  document.querySelectorAll(".tab").forEach((el, i) => {
+    el.classList.toggle("active", ["bounties","create","participate","quiz"][i] === tab);
+  });
+}
+
+// Set default deadlines
+const now = new Date();
+const sub = new Date(now.getTime() + 60*60*1000);
+const rev = new Date(now.getTime() + 2*60*60*1000);
+const fmt = d => d.toISOString().slice(0,16);
+document.getElementById("cSubDL").value = fmt(sub);
+document.getElementById("cRevDL").value = fmt(rev);
+
+// ── QUIZ ARENA ─────────────────────────────────────────────────────
+let qRole=null, qRoomCode=null, qRoomData=null;
+let hPollInt=null, pPollInt=null, pTimerInt=null;
+let pName="", pScore=0, qIdx=0, pAnswered=false, pTimerSecs=30;
+
+const getRK = c => "QR_"+c.toUpperCase();
+const saveR = d => localStorage.setItem(getRK(d.code), JSON.stringify(d));
+const loadR = c => JSON.parse(localStorage.getItem(getRK(c))||"null");
+
+function selectRole(r) {
+  qRole = r;
+  document.getElementById("quizRoleSelector").style.display = r ? "none" : "";
+  document.getElementById("hostPanel").style.display = r==="host" ? "" : "none";
+  document.getElementById("playerPanel").style.display = r==="player" ? "" : "none";
+  if (r==="host") { document.getElementById("hostSetupCard").style.display=""; document.getElementById("hostQCard").style.display="none"; document.getElementById("hostCtrlCard").style.display="none"; }
+  if (r==="player") { document.getElementById("pJoinCard").style.display=""; document.getElementById("pWaitCard").style.display="none"; document.getElementById("pAnswerCard").style.display="none"; document.getElementById("pScoreCard").style.display="none"; }
+  if (!r) { clearInterval(hPollInt); clearInterval(pPollInt); clearInterval(pTimerInt); }
+}
+
+function createQuizRoom() {
+  const title = document.getElementById("hTitle").value.trim();
+  if (!title) { alert("Enter a title!"); return; }
+  qRoomCode = Math.random().toString(36).substring(2,8).toUpperCase();
+  qRoomData = {
+    code: qRoomCode, title,
+    category: document.getElementById("hCategory").value,
+    timer: parseInt(document.getElementById("hTimer").value)||30,
+    context: document.getElementById("hContext").value.trim(),
+    questions:[], players:{}, answers:{},
+    state:"lobby", currentQ:-1
+  };
+  saveR(qRoomData);
+  document.getElementById("displayCode").textContent = qRoomCode;
+  document.getElementById("hostSetupCard").style.display="none";
+  document.getElementById("hostQCard").style.display="";
+  document.getElementById("hostCtrlCard").style.display="";
+  renderHQList();
+  document.getElementById("hostSetupStatus").innerHTML='<div class="status status-success">Room <strong>'+qRoomCode+'</strong> created! Share with players.</div>';
+  hPollInt = setInterval(()=>{
+    qRoomData=loadR(qRoomCode);
+    if(!qRoomData) return;
+    const n=Object.keys(qRoomData.players).length;
+    document.getElementById("hPlayerCount").textContent=n+" player"+(n!==1?"s":"");
+    document.getElementById("hAnsCount").textContent=Object.keys(qRoomData.answers||{}).length;
+    renderHLiveAns();
+  },1500);
+}
+
+function addQ() {
+  const q=document.getElementById("newQ").value.trim();
+  const a=document.getElementById("newA").value.trim();
+  if(!q){alert("Enter a question!");return;}
+  qRoomData.questions.push({q,modelAnswer:a});
+  saveR(qRoomData);
+  document.getElementById("newQ").value="";
+  document.getElementById("newA").value="";
+  renderHQList();
+}
+
+function renderHQList() {
+  const el=document.getElementById("hQList");
+  if(!qRoomData.questions.length){el.innerHTML='<p style="color:var(--muted);font-size:13px">No questions yet.</p>';return;}
+  el.innerHTML=qRoomData.questions.map((q,i)=>`<div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between"><div style="font-size:13px"><strong>${i+1}.</strong> ${q.q}</div><button onclick="removeQ(${i})" style="background:none;border:none;color:var(--red);cursor:pointer">×</button></div>`).join('');
+}
+
+function removeQ(i){qRoomData.questions.splice(i,1);saveR(qRoomData);renderHQList();}
+
+function renderHLiveAns(){
+  const el=document.getElementById("hLiveAns");
+  const ans=qRoomData.answers||{};
+  el.innerHTML=Object.entries(ans).map(([n,a])=>`<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:8px;margin-bottom:4px;font-size:12px"><strong>${n}</strong>: ${a.text.slice(0,60)}...</div>`).join('')||'<p style="color:var(--muted);font-size:12px">Waiting...</p>';
+}
+
+function hostStartRound(){
+  qRoomData=loadR(qRoomCode);
+  if(!qRoomData.questions.length){alert("Add questions first!");return;}
+  qIdx=qRoomData.currentQ+1;
+  if(qIdx>=qRoomData.questions.length){alert("No more questions!");return;}
+  qRoomData.currentQ=qIdx; qRoomData.state="question"; qRoomData.answers={};
+  saveR(qRoomData);
+  document.getElementById("hCurrQ").textContent=(qIdx+1)+". "+qRoomData.questions[qIdx].q;
+  document.getElementById("hStatus").textContent="Q"+(qIdx+1)+" — players answering...";
+  document.getElementById("hStartBtn").style.display="none";
+  document.getElementById("hScoreBtn").style.display="";
+  document.getElementById("hScoreDisplay").style.display="none";
+}
+
+async function hostShowScores(){
+  qRoomData=loadR(qRoomCode);
+  qRoomData.state="scoring"; saveR(qRoomData);
+  document.getElementById("hScoreDisplay").style.display="";
+  document.getElementById("hScores").innerHTML='<div class="status status-info"><span class="spinner"></span>AI scoring all answers...</div>';
+  document.getElementById("hScoreBtn").style.display="none";
+  const q=qRoomData.questions[qIdx];
+  const ans=qRoomData.answers||{};
+  if(!Object.keys(ans).length){
+    document.getElementById("hScores").innerHTML='<p style="color:var(--muted);font-size:13px">No answers submitted.</p>';
+    document.getElementById("hNextBtn").style.display=""; document.getElementById("hStartBtn").style.display="";
+    return;
+  }
+  try {
+    const ansList=Object.entries(ans).map(([n,a])=>n+": "+a.text).join("\n");
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:`You are a blockchain quiz judge. Score each answer 0-100.\n\nCONTEXT:\n${qRoomData.context||"General blockchain"}\n\nQUESTION: ${q.q}\n${q.modelAnswer?"MODEL ANSWER: "+q.modelAnswer:""}\n\nANSWERS:\n${ansList}\n\nReturn JSON only: {"scores":[{"name":"string","score":0,"feedback":"one sentence"}]}`}]})
+    });
+    const data=await res.json();
+    const result=JSON.parse(data.content[0].text.replace(/\`\`\`json|\`\`\`/g,'').trim());
+    result.scores.forEach(s=>{
+      if(qRoomData.players[s.name]!==undefined) qRoomData.players[s.name]=(qRoomData.players[s.name]||0)+s.score;
+      if(qRoomData.answers[s.name]){qRoomData.answers[s.name].score=s.score;qRoomData.answers[s.name].feedback=s.feedback;}
+    });
+    qRoomData.state="scored"; saveR(qRoomData);
+    const sorted=result.scores.sort((a,b)=>b.score-a.score);
+    const medals=["🥇","🥈","🥉"];
+    document.getElementById("hScores").innerHTML=sorted.map((s,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(255,255,255,0.03);border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><div><div style="font-weight:600;font-size:13px">${s.name}</div><div style="font-size:11px;color:var(--muted)">${s.feedback}</div></div></div><div style="font-size:16px;font-weight:700;color:var(--purple-light)">${s.score}/100</div></div>`).join('');
+    const hasMore=qIdx<qRoomData.questions.length-1;
+    document.getElementById("hNextBtn").style.display=hasMore?"":"none";
+    document.getElementById("hStartBtn").style.display=hasMore?"":"none";
+    if(!hasMore){qRoomData.state="finished";saveR(qRoomData);document.getElementById("hStatus").textContent="Quiz complete!";}
+  } catch(e){
+    document.getElementById("hScores").innerHTML='<div class="status status-error">Error: '+e.message+'</div>';
+    document.getElementById("hNextBtn").style.display="";
+  }
+}
+
+function hostNext(){
+  document.getElementById("hNextBtn").style.display="none";
+  document.getElementById("hScoreDisplay").style.display="none";
+  document.getElementById("hStartBtn").style.display="";
+  document.getElementById("hStatus").textContent="Ready for next question";
+}
+
+// ── PLAYER ───────────────────────────────────────────────────────────
+function joinRoom(){
+  pName=document.getElementById("pName").value.trim();
+  const code=document.getElementById("pCode").value.trim().toUpperCase();
+  if(!pName||!code){alert("Enter name and code!");return;}
+  const room=loadR(code);
+  if(!room){document.getElementById("joinStatus").innerHTML='<div class="status status-error">Room not found!</div>';return;}
+  qRoomCode=code; pScore=0; pAnswered=false;
+  room.players[pName]=0; saveR(room);
+  document.getElementById("pQuizTitle").textContent=room.title;
+  document.getElementById("pWaitInfo").textContent="Room: "+code+" — "+room.title;
+  document.getElementById("pJoinCard").style.display="none";
+  document.getElementById("pWaitCard").style.display="";
+  let lastQ=-1;
+  pPollInt=setInterval(()=>{
+    const r=loadR(qRoomCode);
+    if(!r) return;
+    if(r.state==="question"&&r.currentQ!==lastQ){lastQ=r.currentQ;pAnswered=false;showPQuestion(r);}
+    else if(r.state==="scored"){showPScores(r);}
+    else if(r.state==="finished"){clearInterval(pPollInt);showPScores(r);document.getElementById("pWaitNext").textContent="Quiz finished! 🎉";}
+  },1500);
+}
+
+function showPQuestion(room){
+  clearInterval(pTimerInt);
+  document.getElementById("pWaitCard").style.display="none";
+  document.getElementById("pScoreCard").style.display="none";
+  document.getElementById("pAnswerCard").style.display="";
+  const q=room.questions[room.currentQ];
+  document.getElementById("pQN").textContent=room.currentQ+1;
+  document.getElementById("pQText").textContent=q.q;
+  document.getElementById("pAnswerText").value="";
+  document.getElementById("pAnswerText").disabled=false;
+  document.getElementById("pSubmitBtn").disabled=false;
+  document.getElementById("pFeedback").innerHTML="";
+  pTimerSecs=room.timer||30;
+  document.getElementById("pTimerDisplay").textContent=pTimerSecs;
+  document.getElementById("pTimerBar").style.transition="none";
+  document.getElementById("pTimerBar").style.width="100%";
+  setTimeout(()=>{document.getElementById("pTimerBar").style.transition="width "+pTimerSecs+"s linear";document.getElementById("pTimerBar").style.width="0%";},100);
+  pTimerInt=setInterval(()=>{
+    pTimerSecs--;
+    document.getElementById("pTimerDisplay").textContent=pTimerSecs;
+    if(pTimerSecs<=0){clearInterval(pTimerInt);if(!pAnswered)autoSubmitP();}
+  },1000);
+}
+
+function submitPAnswer(){
+  if(pAnswered) return;
+  const ans=document.getElementById("pAnswerText").value.trim();
+  if(!ans){autoSubmitP();return;}
+  clearInterval(pTimerInt);
+  pAnswered=true;
+  document.getElementById("pAnswerText").disabled=true;
+  document.getElementById("pSubmitBtn").disabled=true;
+  const r=loadR(qRoomCode);
+  if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,time:Date.now()};saveR(r);}
+  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Submitted! Waiting for host to reveal scores...</div>';
+}
+
+function autoSubmitP(){
+  if(pAnswered) return;
+  pAnswered=true;
+  document.getElementById("pAnswerText").disabled=true;
+  document.getElementById("pSubmitBtn").disabled=true;
+  document.getElementById("pFeedback").innerHTML='<div class="status status-warning">⏰ Time up!</div>';
+}
+
+function showPScores(room){
+  document.getElementById("pAnswerCard").style.display="none";
+  document.getElementById("pScoreCard").style.display="";
+  const players=room.players||{};
+  const sorted=Object.entries(players).sort((a,b)=>b[1]-a[1]);
+  const medals=["🥇","🥈","🥉"];
+  const myAns=room.answers?.[pName];
+  let myHtml="";
+  if(myAns?.score!==undefined){
+    pScore=players[pName]||0;
+    document.getElementById("pTotalScore").textContent=pScore;
+    myHtml=`<div class="status status-info" style="margin-bottom:14px">This round: <strong>${myAns.score}/100</strong> — ${myAns.feedback||""}</div>`;
+  }
+  document.getElementById("pLeaderboard").innerHTML=myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:10px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:6px"><div style="display:flex;align-items:center;gap:10px"><span>${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;color:var(--purple-light)">${s}pts</span></div>`).join('');
 }
 
 </script>
