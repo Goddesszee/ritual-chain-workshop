@@ -1227,7 +1227,6 @@ async function finalizeWinner(bountyId) {
 }
 
 function showTab(tab) {
-  if (tab === "quiz" && !OPENAI_KEY) { checkOpenAIKey(); }
   ["bounties","create","participate","quiz"].forEach(t => {
     document.getElementById("tab-" + t).style.display = t === tab ? "" : "none";
   });
