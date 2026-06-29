@@ -489,7 +489,32 @@ function showPScores(room){
   const corrAns = room.questions?.[Number(room.currentQuestion)]?.correct || "";
   const corrText = (room.questions?.[Number(room.currentQuestion)]?.options||[])[["A","B","C","D"].indexOf(corrAns)] || "";
   const corrHtml = corrAns ? `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);border-radius:10px;padding:14px;margin-bottom:16px;font-size:14px;color:#10b981;text-align:center"><strong>Correct Answer: ${corrAns}</strong>${corrText?" — "+corrText.replace(/^[A-D][.\s]+/,''):""}</div>` : "";
-  document.getElementById("pLeaderboard").innerHTML= corrHtml + myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;font-size:16px;color:var(--purple-light)">${s}pts</span></div>`).join('');
+  const myRank = sorted.findIndex(([n]) => n === pName) + 1;
+  const totalPlayers = sorted.length;
+  const myRankHtml = myRank > 0 ? `<div style="text-align:center;margin-bottom:16px;padding:12px;background:rgba(124,58,237,0.1);border-radius:10px">
+    <div style="font-size:22px;font-weight:800;color:var(--purple-light)">#${myRank} of ${totalPlayers}</div>
+    <div style="font-size:12px;color:var(--muted)">Your position</div>
+  </div>` : "";
+  const top5 = sorted.slice(0,5);
+  const rest = sorted.slice(5);
+  const myInRest = rest.find(([n]) => n === pName);
+  document.getElementById("pLeaderboard").innerHTML = corrHtml + myHtml + myRankHtml +
+    '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Top ' + Math.min(5,sorted.length) + '</div>' +
+    top5.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:${n===pName?"rgba(124,58,237,0.15)":i===0?"rgba(255,215,0,0.05)":"rgba(255,255,255,0.02)"};border:2px solid ${n===pName?"rgba(124,58,237,0.5)":i===0?"rgba(255,215,0,0.3)":"var(--border)"};border-radius:10px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">${["🥇","🥈","🥉","4️⃣","5️⃣"][i]||"#"+(i+1)}</span>
+        <span style="font-weight:${n===pName?700:500};font-size:14px">${n}${n===pName?" (you)":""}</span>
+      </div>
+      <span style="font-weight:800;font-size:16px;color:${i===0?"#FFD700":n===pName?"var(--purple-light)":"var(--text)"}">${s}pts</span>
+    </div>`).join('') +
+    (myInRest ? `<div style="text-align:center;padding:8px;color:var(--muted);font-size:12px">...</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(124,58,237,0.15);border:2px solid rgba(124,58,237,0.5);border-radius:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:14px;font-weight:700;color:var(--purple-light)">#${myRank}</span>
+        <span style="font-weight:700;font-size:14px">${pName} (you)</span>
+      </div>
+      <span style="font-weight:800;font-size:16px;color:var(--purple-light)">${myInRest[1]}pts</span>
+    </div>` : "");
 }
 
 
@@ -538,201 +563,100 @@ const TOPIC_SEARCHES = {
 async function aiGenerateQuestions() {
   const topic = document.getElementById("aiQTopic").value;
   const count = parseInt(document.getElementById("aiQCount").value) || 10;
-  const customTopic = document.getElementById("aiCustomTopic").value.trim();
+  const customTopic = document.getElementById("aiCustomTopic")?.value?.trim() || "";
   const btn = document.getElementById("aiGenBtn");
   const status = document.getElementById("aiGenStatus");
 
-  const srcDocs    = document.getElementById("srcDocs").checked;
-  const srcTwitter = document.getElementById("srcTwitter").checked;
-  const srcDiscord = document.getElementById("srcDiscord").checked;
-  const srcGithub  = document.getElementById("srcGithub").checked;
-  const srcBlog    = document.getElementById("srcBlog").checked;
-  const srcYoutube = document.getElementById("srcYoutube").checked;
+  const topicMap = {
+    "ritual": "Ritual Chain blockchain with native AI precompiles. Key facts: LLM precompile at 0x0802, HTTP at 0x0801, block.timestamp in milliseconds, Chain ID 1979, token CRAT, TEE-backed execution, RitualWallet for compute payments, commit-reveal privacy pattern",
+    "solidity": "Solidity smart contracts, EVM, gas optimization, security patterns, reentrancy, access control, events, mappings",
+    "defi": "DeFi protocols, AMMs, liquidity pools, yield farming, stablecoins, lending, DEX, TVL",
+    "web3": "Web3, blockchain fundamentals, consensus mechanisms, wallets, transactions, gas, nodes",
+    "commit-reveal": "Commit-reveal schemes, privacy on blockchain, keccak256 hashing, salts, zero knowledge",
+    "nft": "NFTs, ERC-721, ERC-1155, metadata, IPFS, royalties, marketplaces",
+    "layer2": "Layer 2 scaling, optimistic rollups, ZK rollups, state channels, bridges, Ethereum scaling",
+    "custom": customTopic || "blockchain technology"
+  };
 
-  const sources = [];
-  if (srcDocs)    sources.push("official documentation and whitepapers");
-  if (srcTwitter) sources.push("X/Twitter announcements and threads");
-  if (srcDiscord) sources.push("Discord community discussions");
-  if (srcGithub)  sources.push("GitHub repositories and READMEs");
-  if (srcBlog)    sources.push("blog posts and Medium articles");
-  if (srcYoutube) sources.push("YouTube tutorials and conference talks");
-
-  const topicLabel = topic === "custom" ? (customTopic || "blockchain") : {
-    "ritual": "Ritual Chain & AI Precompiles",
-    "solidity": "Solidity & Smart Contracts",
-    "defi": "DeFi Protocols",
-    "web3": "Web3 & Blockchain Fundamentals",
-    "commit-reveal": "Commit-Reveal & Privacy",
-    "nft": "NFTs & Tokenization",
-    "layer2": "Layer 2 & Scaling"
-  }[topic];
+  const topicLabel = topicMap[topic] || topicMap["web3"];
 
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Searching & generating...';
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Loading AI config...</div>';
-
-  // Fetch OpenAI key from server
-  const aiKey = await getOpenAIKey();
-  if (!aiKey) {
-    status.innerHTML = '<div class="status status-error">AI key not configured. Check Vercel environment variables.</div>';
-    btn.disabled = false; btn.innerHTML = "Auto-Search & Generate Questions";
-    return;
-  }
-  window._oaiKey = aiKey;
-
-  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 1: AI searching ' + sources.length + ' sources for ' + topicLabel + '...</div>';
+  btn.innerHTML = '<span class="spinner"></span>Generating ' + count + ' questions...';
+  status.innerHTML = '<div class="status status-info"><span class="spinner"></span>AI generating ' + count + ' questions about ' + (topic === "custom" ? customTopic : topic) + '...</div>';
 
   try {
-    // Step 1: Use Claude with web_search to find current info
-    const searchPrompt = topic === "ritual"
-      ? `Search for the latest information about Ritual Chain from these sources:
-- https://docs.ritualfoundation.org
-- https://twitter.com/ritualnet
-- https://github.com/ritual-net
-- Ritual Chain blog posts and announcements
+    const aiKey = await getOpenAIKey();
+    if (!aiKey) throw new Error("API key not found. Check Vercel environment variables.");
 
-Find key facts, features, technical details, recent updates, and important concepts about Ritual Chain that would make good quiz questions.`
-      : `Search for current, accurate information about "${topicLabel}" in blockchain/Web3 from:
-${sources.map(s => "- " + s).join("\n")}
-
-Find key concepts, facts, technical details, and recent updates that would make good quiz questions.`;
-
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
-
-    // Step 2: Generate questions based on searched knowledge
-    const genResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + (window._oaiKey || "")
-      },
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + aiKey },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        max_tokens: 4000,
+        max_tokens: 3000,
+        temperature: 0.7,
         messages: [
-          {
-            role: "system",
-            content: "You are a blockchain quiz creator with deep knowledge of Ritual Chain, DeFi, Web3, Solidity, and blockchain technology. You create accurate, educational quiz questions based on real facts."
-          },
-          {
-            role: "user",
-            content: `Create exactly ${count} multiple choice quiz questions about "${topicLabel}".
+          { role: "system", content: "You are a blockchain quiz expert. Generate multiple choice questions. Return ONLY valid JSON, no markdown, no explanation." },
+          { role: "user", content: `Generate exactly ${count} multiple choice quiz questions about: ${topicLabel}
 
-Key facts about Ritual Chain to use if topic is ritual:
-- Ritual Chain is an EVM-compatible blockchain with native AI precompiles
-- LLM inference precompile is at address 0x0802
-- HTTP call precompile is at address 0x0801
-- block.timestamp uses milliseconds not seconds on Ritual Chain
-- Ritual uses TEE (Trusted Execution Environment) for private AI computation
-- Chain ID is 1979
-- Native token is CRAT
-- RitualWallet contract handles compute payments
-- Supports batch LLM judging in a single transaction
-- Founded to bring AI natively on-chain
+Rules:
+- Each question has exactly 4 options (A, B, C, D)
+- Only ONE correct answer per question
+- Wrong options should be plausible but clearly wrong to experts
+- Mix difficulty: 3 easy, 4 medium, 3 hard
+- Questions should be specific and factual
 
-Sources to base questions on: ${sources.join(", ")}
-
-Mix difficulty: easy (30%), medium (40%), hard (30%).
-Each question MUST have exactly 4 options (A, B, C, D) with ONE correct answer.
-Make wrong options plausible but clearly wrong to experts.
-
-Return JSON only (no markdown, no backticks):
-{"sourcesUsed":["Ritual Chain docs","blockchain knowledge"],"questions":[{"q":"question text","options":["A. option1","B. option2","C. option3","D. option4"],"correct":"A","explanation":"why this is correct","difficulty":"easy|medium|hard","source":"source name"}]}`
-          }
+Return this exact JSON format:
+{"questions":[{"q":"question text","options":["A. option1","B. option2","C. option3","D. option4"],"correct":"A","explanation":"brief explanation","difficulty":"easy"}]}` }
         ]
       })
     });
 
-    const genData = await genResponse.json();
-    if (genData.error) throw new Error(genData.error.message);
-    const allText = genData.choices[0].message.content;
+    if (!response.ok) {
+      const err = await response.json();
+      throw new Error(err.error?.message || "OpenAI error " + response.status);
+    }
 
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 3: Processing ' + count + ' questions...</div>';
+    const data = await response.json();
+    const text = data.choices[0].message.content.trim();
+    const jsonStr = text.replace(/^```json
+?|
+?```$/g, '').trim();
+    const result = JSON.parse(jsonStr);
 
-    // Parse JSON from response
-    const jsonMatch = allText.match(/\{[\s\S]*"questions"[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("Could not parse AI response");
-    const result = JSON.parse(jsonMatch[0]);
+    if (!result.questions?.length) throw new Error("No questions generated");
 
-    // Save questions locally first (instant)
+    // Save locally immediately
     result.questions.forEach(q => {
-      const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
-      qRoomData.questions.push({
-        q: q.q, options: opts,
-        correct: q.correct || "A",
-        explanation: q.explanation || q.modelAnswer || "",
-        difficulty: q.difficulty, source: q.source
-      });
+      const opts = q.options || ["A. True","B. False","C. Maybe","D. None"];
+      qRoomData.questions.push({ q: q.q, options: opts, correct: q.correct||"A", explanation: q.explanation||"", difficulty: q.difficulty||"medium" });
     });
     saveR(qRoomData);
     renderHQList();
 
-    // Add all questions on-chain in sequence with ONE MetaMask popup per tx
-    // Use a single batched approach - send all txs then wait for all
-    let added = 0;
-    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sending ' + result.questions.length + ' questions to blockchain (approve once per question)...</div>';
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Adding ' + result.questions.length + ' questions to blockchain (sign once per question)...</div>';
 
-    const txPromises = [];
+    // Send all transactions simultaneously - just approve each popup
+    const txs = [];
     for (const q of result.questions) {
-      const opts = q.options || ["A. True","B. False","C. Maybe","D. None of above"];
-      const cleanOpts = opts.map(o => o.replace(/^[A-D][.\s]+/,'').trim());
+      const opts = (q.options||[]).map(o => o.replace(/^[A-D][.\s]+/,'').trim());
       try {
         const tx = await quizContract.addQuestion(
           qRoomCode, q.q,
-          cleanOpts[0]||"True", cleanOpts[1]||"False",
-          cleanOpts[2]||"Maybe", cleanOpts[3]||"None",
-          q.correct||"A", q.explanation||q.modelAnswer||""
+          opts[0]||"True", opts[1]||"False", opts[2]||"Maybe", opts[3]||"None",
+          q.correct||"A", q.explanation||""
         );
-        txPromises.push(tx.wait());
-        added++;
-        status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sent ' + added + '/' + result.questions.length + ' — waiting for confirmations...</div>';
-      } catch(e) { console.error("tx error:", e.message); }
+        txs.push(tx.wait());
+      } catch(e) { console.error("addQ error:", e.message); }
     }
-    // Wait for all confirmations at once
-    await Promise.all(txPromises);
 
-    const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
-    status.innerHTML = '<div class="status status-success"> ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
+    status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for ' + txs.length + ' blockchain confirmations...</div>';
+    await Promise.all(txs);
+    status.innerHTML = '<div class="status status-success">Done! ' + result.questions.length + ' questions ready.</div>';
 
   } catch(e) {
-    // Fallback: generate from Claude's training knowledge
-    status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
-    try {
-      const fallback = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer " + (window._oaiKey || "")
-        },
-        body: JSON.stringify({
-          model: "gpt-4o-mini",
-          max_tokens: 3000,
-          messages: [
-            { role: "system", content: "You are a blockchain quiz creator. Return only valid JSON." },
-            { role: "user", content: `Generate ${count} multiple choice quiz questions about "${topicLabel}". Each must have 4 options (A,B,C,D) and one correct answer. Mix easy/medium/hard. Return JSON only: {"questions":[{"q":"question","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":"A","explanation":"why correct","difficulty":"easy|medium|hard"}]}` }
-          ]
-        })
-      });
-      const fd = await fallback.json();
-      if (fd.error) throw new Error(fd.error.message);
-      const ft = fd.choices[0].message.content.replace(/\`\`\`json|\`\`\`/g,"").trim();
-      const fr = JSON.parse(ft);
-      fr.questions.forEach(q => {
-        const opts = q.options||["A. True","B. False","C. Maybe","D. None"];
-        qRoomData.questions.push({q:q.q,options:opts,correct:q.correct||"A",difficulty:q.difficulty});
-      });
-      saveR(qRoomData); renderHQList();
-      status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Sending to blockchain...</div>';
-      const fxs = [];
-      for (const q of fr.questions) {
-        const opts=(q.options||["A","B","C","D"]).map(o=>o.replace(/^[A-D][.\s]+/,'').trim());
-        try { const tx=await quizContract.addQuestion(qRoomCode,q.q,opts[0]||"True",opts[1]||"False",opts[2]||"Maybe",opts[3]||"None",q.correct||"A",q.modelAnswer||""); fxs.push(tx.wait()); } catch(e){console.error(e.message);}
-      }
-      await Promise.all(fxs);
-      status.innerHTML = '<div class="status status-success"> ' + fr.questions.length + ' questions added on-chain!</div>';
-    } catch(e2) {
-      status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
-    }
+    console.error(e);
+    status.innerHTML = '<div class="status status-error">Error: ' + e.message + '</div>';
   }
 
   btn.disabled = false;
@@ -2086,7 +2010,32 @@ function showPScores(room){
   const corrAns = room.questions?.[Number(room.currentQuestion)]?.correct || "";
   const corrText = (room.questions?.[Number(room.currentQuestion)]?.options||[])[["A","B","C","D"].indexOf(corrAns)] || "";
   const corrHtml = corrAns ? `<div style="background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.4);border-radius:10px;padding:14px;margin-bottom:16px;font-size:14px;color:#10b981;text-align:center"><strong>Correct Answer: ${corrAns}</strong>${corrText?" — "+corrText.replace(/^[A-D][.\s]+/,''):""}</div>` : "";
-  document.getElementById("pLeaderboard").innerHTML= corrHtml + myHtml+sorted.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:${n===pName?"rgba(124,58,237,0.1)":"rgba(255,255,255,0.02)"};border:1px solid ${n===pName?"rgba(124,58,237,0.4)":"var(--border)"};border-radius:8px;margin-bottom:8px"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:18px">${medals[i]||"#"+(i+1)}</span><span style="font-weight:${n===pName?700:400};font-size:14px">${n}${n===pName?" (you)":""}</span></div><span style="font-weight:700;font-size:16px;color:var(--purple-light)">${s}pts</span></div>`).join('');
+  const myRank = sorted.findIndex(([n]) => n === pName) + 1;
+  const totalPlayers = sorted.length;
+  const myRankHtml = myRank > 0 ? `<div style="text-align:center;margin-bottom:16px;padding:12px;background:rgba(124,58,237,0.1);border-radius:10px">
+    <div style="font-size:22px;font-weight:800;color:var(--purple-light)">#${myRank} of ${totalPlayers}</div>
+    <div style="font-size:12px;color:var(--muted)">Your position</div>
+  </div>` : "";
+  const top5 = sorted.slice(0,5);
+  const rest = sorted.slice(5);
+  const myInRest = rest.find(([n]) => n === pName);
+  document.getElementById("pLeaderboard").innerHTML = corrHtml + myHtml + myRankHtml +
+    '<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px">Top ' + Math.min(5,sorted.length) + '</div>' +
+    top5.map(([n,s],i)=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:${n===pName?"rgba(124,58,237,0.15)":i===0?"rgba(255,215,0,0.05)":"rgba(255,255,255,0.02)"};border:2px solid ${n===pName?"rgba(124,58,237,0.5)":i===0?"rgba(255,215,0,0.3)":"var(--border)"};border-radius:10px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:20px">${["🥇","🥈","🥉","4️⃣","5️⃣"][i]||"#"+(i+1)}</span>
+        <span style="font-weight:${n===pName?700:500};font-size:14px">${n}${n===pName?" (you)":""}</span>
+      </div>
+      <span style="font-weight:800;font-size:16px;color:${i===0?"#FFD700":n===pName?"var(--purple-light)":"var(--text)"}">${s}pts</span>
+    </div>`).join('') +
+    (myInRest ? `<div style="text-align:center;padding:8px;color:var(--muted);font-size:12px">...</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px;background:rgba(124,58,237,0.15);border:2px solid rgba(124,58,237,0.5);border-radius:10px">
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:14px;font-weight:700;color:var(--purple-light)">#${myRank}</span>
+        <span style="font-weight:700;font-size:14px">${pName} (you)</span>
+      </div>
+      <span style="font-weight:800;font-size:16px;color:var(--purple-light)">${myInRest[1]}pts</span>
+    </div>` : "");
 }
 
 
