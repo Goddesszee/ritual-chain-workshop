@@ -174,8 +174,34 @@ function showPQuestion(room){
   document.getElementById("pQText").textContent=q.q;
   document.getElementById("pAnswerText").value="";
   document.getElementById("pAnswerText").disabled=false;
-  document.getElementById("pSubmitBtn").disabled=false;
   document.getElementById("pFeedback").innerHTML="";
+  pAnswered=false;
+
+  // Render multiple choice options
+  const optEl=document.getElementById("pOptions");
+  if(q.options && q.options.length){
+    document.getElementById("pAnswerText").style.display="none";
+    const letters=["A","B","C","D"];
+    const colors=["rgba(124,58,237,0.15)","rgba(16,185,129,0.15)","rgba(245,158,11,0.15)","rgba(239,68,68,0.15)"];
+    const borders=["rgba(124,58,237,0.4)","rgba(16,185,129,0.4)","rgba(245,158,11,0.4)","rgba(239,68,68,0.4)"];
+    optEl.innerHTML=q.options.map((opt,i)=>`
+      <button onclick="selectOption('${letters[i]}','${opt.replace(/'/g,"\\'")}',this)" style="
+        background:${colors[i]};border:2px solid ${borders[i]};border-radius:12px;
+        padding:16px;text-align:left;cursor:pointer;color:var(--text);
+        font-size:14px;font-weight:500;transition:all 0.15s;width:100%;
+        display:flex;align-items:center;gap:12px;
+      " id="opt_${letters[i]}">
+        <span style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${letters[i]}</span>
+        <span>${opt.replace(/^[A-D]\.\s*/,'')}</span>
+      </button>
+    `).join('');
+    optEl.style.display="grid";
+  } else {
+    // Fallback to text input
+    optEl.style.display="none";
+    document.getElementById("pAnswerText").style.display="";
+  }
+
   pTimerSecs=room.timer||30;
   document.getElementById("pTimerDisplay").textContent=pTimerSecs;
   document.getElementById("pTimerBar").style.transition="none";
@@ -188,17 +214,28 @@ function showPQuestion(room){
   },1000);
 }
 
-function submitPAnswer(){
+function selectOption(letter, optText, btnEl){
   if(pAnswered) return;
-  const ans=document.getElementById("pAnswerText").value.trim();
+  // Highlight selected
+  document.querySelectorAll("#pOptions button").forEach(b=>b.style.transform="");
+  btnEl.style.transform="scale(1.02)";
+  btnEl.style.boxShadow="0 0 0 3px white";
+  // Submit
+  submitPAnswer(letter, optText.replace(/^[A-D]\.\s*/,''));
+}
+
+function submitPAnswer(letter, optText){
+  if(pAnswered) return;
+  const ans = letter ? (letter + ". " + optText) : document.getElementById("pAnswerText").value.trim();
   if(!ans){autoSubmitP();return;}
   clearInterval(pTimerInt);
   pAnswered=true;
   document.getElementById("pAnswerText").disabled=true;
-  document.getElementById("pSubmitBtn").disabled=true;
+  // Disable all option buttons
+  document.querySelectorAll("#pOptions button").forEach(b=>b.disabled=true);
   const r=loadR(qRoomCode);
-  if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,time:Date.now()};saveR(r);}
-  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Submitted! Waiting for host to reveal scores...</div>';
+  if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,selectedLetter:letter,time:Date.now()};saveR(r);}
+  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Answer locked in! Waiting for host to reveal scores...</div>';
 }
 
 function autoSubmitP(){
@@ -337,7 +374,7 @@ Find key concepts, facts, technical details, and recent updates that would make 
           },
           {
             role: "user",
-            content: `Create exactly ${count} quiz questions about "${topicLabel}".
+            content: `Create exactly ${count} multiple choice quiz questions about "${topicLabel}".
 
 Key facts about Ritual Chain to use if topic is ritual:
 - Ritual Chain is an EVM-compatible blockchain with native AI precompiles
@@ -354,10 +391,11 @@ Key facts about Ritual Chain to use if topic is ritual:
 Sources to base questions on: ${sources.join(", ")}
 
 Mix difficulty: easy (30%), medium (40%), hard (30%).
-Make questions specific, factual and educational.
+Each question MUST have exactly 4 options (A, B, C, D) with ONE correct answer.
+Make wrong options plausible but clearly wrong to experts.
 
 Return JSON only (no markdown, no backticks):
-{"sourcesUsed":["Ritual Chain docs","blockchain knowledge"],"questions":[{"q":"question text","modelAnswer":"accurate concise answer","difficulty":"easy|medium|hard","source":"source name"}]}`
+{"sourcesUsed":["Ritual Chain docs","blockchain knowledge"],"questions":[{"q":"question text","options":["A. option1","B. option2","C. option3","D. option4"],"correct":"A","explanation":"why this is correct","difficulty":"easy|medium|hard","source":"source name"}]}`
           }
         ]
       })
@@ -405,7 +443,7 @@ Return JSON only (no markdown, no backticks):
           max_tokens: 3000,
           messages: [
             { role: "system", content: "You are a blockchain quiz creator. Return only valid JSON." },
-            { role: "user", content: `Generate ${count} quiz questions about "${topicLabel}". Mix easy/medium/hard. Return JSON only: {"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}` }
+            { role: "user", content: `Generate ${count} multiple choice quiz questions about "${topicLabel}". Each must have 4 options (A,B,C,D) and one correct answer. Mix easy/medium/hard. Return JSON only: {"questions":[{"q":"question","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":"A","explanation":"why correct","difficulty":"easy|medium|hard"}]}` }
           ]
         })
       });
@@ -439,7 +477,8 @@ function renderHQListUpdated() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
-          ${q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0, 80) + (q.modelAnswer.length > 80 ? "..." : "") + '</div>' : ''}
+          ${q.options ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">Options: ' + q.options.join(" | ") + '</div>' : (q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0,80) + '</div>' : '')}
+          ${q.correct ? '<div style="font-size:11px;color:#10b981;margin-top:2px">✓ Correct: ' + q.correct + '</div>' : ''}
           ${q.source ? '<div style="font-size:10px;color:var(--muted2);margin-top:3px">🔗 ' + q.source.slice(0,60) + '</div>' : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
@@ -1446,8 +1485,34 @@ function showPQuestion(room){
   document.getElementById("pQText").textContent=q.q;
   document.getElementById("pAnswerText").value="";
   document.getElementById("pAnswerText").disabled=false;
-  document.getElementById("pSubmitBtn").disabled=false;
   document.getElementById("pFeedback").innerHTML="";
+  pAnswered=false;
+
+  // Render multiple choice options
+  const optEl=document.getElementById("pOptions");
+  if(q.options && q.options.length){
+    document.getElementById("pAnswerText").style.display="none";
+    const letters=["A","B","C","D"];
+    const colors=["rgba(124,58,237,0.15)","rgba(16,185,129,0.15)","rgba(245,158,11,0.15)","rgba(239,68,68,0.15)"];
+    const borders=["rgba(124,58,237,0.4)","rgba(16,185,129,0.4)","rgba(245,158,11,0.4)","rgba(239,68,68,0.4)"];
+    optEl.innerHTML=q.options.map((opt,i)=>`
+      <button onclick="selectOption('${letters[i]}','${opt.replace(/'/g,"\\'")}',this)" style="
+        background:${colors[i]};border:2px solid ${borders[i]};border-radius:12px;
+        padding:16px;text-align:left;cursor:pointer;color:var(--text);
+        font-size:14px;font-weight:500;transition:all 0.15s;width:100%;
+        display:flex;align-items:center;gap:12px;
+      " id="opt_${letters[i]}">
+        <span style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${letters[i]}</span>
+        <span>${opt.replace(/^[A-D]\.\s*/,'')}</span>
+      </button>
+    `).join('');
+    optEl.style.display="grid";
+  } else {
+    // Fallback to text input
+    optEl.style.display="none";
+    document.getElementById("pAnswerText").style.display="";
+  }
+
   pTimerSecs=room.timer||30;
   document.getElementById("pTimerDisplay").textContent=pTimerSecs;
   document.getElementById("pTimerBar").style.transition="none";
@@ -1460,17 +1525,28 @@ function showPQuestion(room){
   },1000);
 }
 
-function submitPAnswer(){
+function selectOption(letter, optText, btnEl){
   if(pAnswered) return;
-  const ans=document.getElementById("pAnswerText").value.trim();
+  // Highlight selected
+  document.querySelectorAll("#pOptions button").forEach(b=>b.style.transform="");
+  btnEl.style.transform="scale(1.02)";
+  btnEl.style.boxShadow="0 0 0 3px white";
+  // Submit
+  submitPAnswer(letter, optText.replace(/^[A-D]\.\s*/,''));
+}
+
+function submitPAnswer(letter, optText){
+  if(pAnswered) return;
+  const ans = letter ? (letter + ". " + optText) : document.getElementById("pAnswerText").value.trim();
   if(!ans){autoSubmitP();return;}
   clearInterval(pTimerInt);
   pAnswered=true;
   document.getElementById("pAnswerText").disabled=true;
-  document.getElementById("pSubmitBtn").disabled=true;
+  // Disable all option buttons
+  document.querySelectorAll("#pOptions button").forEach(b=>b.disabled=true);
   const r=loadR(qRoomCode);
-  if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,time:Date.now()};saveR(r);}
-  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Submitted! Waiting for host to reveal scores...</div>';
+  if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,selectedLetter:letter,time:Date.now()};saveR(r);}
+  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Answer locked in! Waiting for host to reveal scores...</div>';
 }
 
 function autoSubmitP(){
@@ -1609,7 +1685,7 @@ Find key concepts, facts, technical details, and recent updates that would make 
           },
           {
             role: "user",
-            content: `Create exactly ${count} quiz questions about "${topicLabel}".
+            content: `Create exactly ${count} multiple choice quiz questions about "${topicLabel}".
 
 Key facts about Ritual Chain to use if topic is ritual:
 - Ritual Chain is an EVM-compatible blockchain with native AI precompiles
@@ -1626,10 +1702,11 @@ Key facts about Ritual Chain to use if topic is ritual:
 Sources to base questions on: ${sources.join(", ")}
 
 Mix difficulty: easy (30%), medium (40%), hard (30%).
-Make questions specific, factual and educational.
+Each question MUST have exactly 4 options (A, B, C, D) with ONE correct answer.
+Make wrong options plausible but clearly wrong to experts.
 
 Return JSON only (no markdown, no backticks):
-{"sourcesUsed":["Ritual Chain docs","blockchain knowledge"],"questions":[{"q":"question text","modelAnswer":"accurate concise answer","difficulty":"easy|medium|hard","source":"source name"}]}`
+{"sourcesUsed":["Ritual Chain docs","blockchain knowledge"],"questions":[{"q":"question text","options":["A. option1","B. option2","C. option3","D. option4"],"correct":"A","explanation":"why this is correct","difficulty":"easy|medium|hard","source":"source name"}]}`
           }
         ]
       })
@@ -1677,7 +1754,7 @@ Return JSON only (no markdown, no backticks):
           max_tokens: 3000,
           messages: [
             { role: "system", content: "You are a blockchain quiz creator. Return only valid JSON." },
-            { role: "user", content: `Generate ${count} quiz questions about "${topicLabel}". Mix easy/medium/hard. Return JSON only: {"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}` }
+            { role: "user", content: `Generate ${count} multiple choice quiz questions about "${topicLabel}". Each must have 4 options (A,B,C,D) and one correct answer. Mix easy/medium/hard. Return JSON only: {"questions":[{"q":"question","options":["A. opt1","B. opt2","C. opt3","D. opt4"],"correct":"A","explanation":"why correct","difficulty":"easy|medium|hard"}]}` }
           ]
         })
       });
@@ -1711,7 +1788,8 @@ function renderHQListUpdated() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
-          ${q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0, 80) + (q.modelAnswer.length > 80 ? "..." : "") + '</div>' : ''}
+          ${q.options ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">Options: ' + q.options.join(" | ") + '</div>' : (q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0,80) + '</div>' : '')}
+          ${q.correct ? '<div style="font-size:11px;color:#10b981;margin-top:2px">✓ Correct: ' + q.correct + '</div>' : ''}
           ${q.source ? '<div style="font-size:10px;color:var(--muted2);margin-top:3px">🔗 ' + q.source.slice(0,60) + '</div>' : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
