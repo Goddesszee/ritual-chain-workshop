@@ -385,9 +385,9 @@ async function loadBounties() {
     list.innerHTML = "";
     for (let i = 1; i < nextId; i++) {
       const b = await contract.getBounty(i);
-      const now = Date.now() / 1000;
-      const subDL = Number(b.submissionDeadline);
-      const revDL = Number(b.revealDeadline);
+      const now = Date.now(); // ms — Ritual block.timestamp is in ms
+      const subDL = Number(b.submissionDeadline); // ms
+      const revDL = Number(b.revealDeadline); // ms
       let status = "● Commit Phase";
       let badgeClass = "badge-green";
       if (b.finalized) { status = " Finalized"; badgeClass = "badge-purple"; }
@@ -422,8 +422,8 @@ async function showBountyDetail(id, b, status, badgeClass) {
   document.getElementById("detailBadge").className = `badge ${badgeClass}`;
   document.getElementById("detailBadge").textContent = status;
   document.getElementById("detailReward").textContent = ethers.formatEther(b.reward) + " CRAT";
-  document.getElementById("detailSubDL").textContent = new Date(Number(b.submissionDeadline)*1000).toLocaleString();
-  document.getElementById("detailRevDL").textContent = new Date(Number(b.revealDeadline)*1000).toLocaleString();
+  document.getElementById("detailSubDL").textContent = new Date(Number(b.submissionDeadline)).toLocaleString();
+  document.getElementById("detailRevDL").textContent = new Date(Number(b.revealDeadline)).toLocaleString();
   document.getElementById("detailCount").textContent = b.submissionCount.toString();
   document.getElementById("detailRubric").textContent = b.rubric;
 
