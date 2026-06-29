@@ -6,6 +6,16 @@
 <title>NAN Bounty Judge — Privacy-Preserving AI Bounty System</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js">
 // ── QUIZ ARENA ─────────────────────────────────────────────────────
+// Load OpenAI key from server on first use
+async function getOpenAIKey() {
+  if (window._oaiKey) return window._oaiKey;
+  try {
+    const r = await fetch("/api/key");
+    if (r.ok) { const d = await r.json(); window._oaiKey = d.key; return d.key; }
+  } catch(e) {}
+  return null;
+}
+// ── QUIZ ARENA ─────────────────────────────────────────────────────
 // OpenAI key handled server-side
 function checkOpenAIKey() {} // no-op
 
@@ -48,7 +58,7 @@ function switchToPlayer() {
     backBtn = document.createElement("div");
     backBtn.id = "backToHostBtn";
     backBtn.style = "position:fixed;bottom:80px;right:20px;z-index:999;background:var(--purple);color:white;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(124,58,237,0.4)";
-    backBtn.innerHTML = "🎙️ Back to Host";
+    backBtn.innerHTML = "Back to Host";
     backBtn.onclick = switchBackToHost;
     document.body.appendChild(backBtn);
   }
@@ -180,7 +190,7 @@ async function hostShowScores(){
   try {
     const ansList=Object.entries(ans).map(([n,a])=>n+": "+a.text).join("\n");
     const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers:{"Content-Type":"application/json"},
+      method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer "+(window._oaiKey||"")},
       body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:`You are a blockchain quiz judge. Score each answer 0-100.\n\nCONTEXT:\n${qRoomData.context||"General blockchain"}\n\nQUESTION: ${q.q}\n${q.modelAnswer?"MODEL ANSWER: "+q.modelAnswer:""}\n\nANSWERS:\n${ansList}\n\nReturn JSON only: {"scores":[{"name":"string","score":0,"feedback":"one sentence"}]}`}]})
     });
     const data=await res.json();
@@ -209,7 +219,7 @@ async function hostShowScores(){
       try {
         const finTx = await quizContract.finalizeRoom(qRoomCode);
         await finTx.wait();
-        document.getElementById("hStatus").textContent="✅ Quiz finalized! Winner paid on-chain.";
+        document.getElementById("hStatus").textContent=" Quiz finalized! Winner paid on-chain.";
       } catch(e) { console.log("finalize error:", e.message); }
     }
   } catch(e){
@@ -359,14 +369,14 @@ async function submitOnChainAnswer(letter) {
     local.myAnswers[currentQIdx] = { answer: letter, salt: currentQSalt };
     saveR({...local, code: qRoomCode, roomId: qRoomCode});
 
-    document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer committed on-chain! Waiting for reveal phase...</div>';
+    document.getElementById("pFeedback").innerHTML='<div class="status status-success"> Answer committed on-chain! Waiting for reveal phase...</div>';
 
     // Auto-reveal after deadline
     setTimeout(async () => {
       try {
         const revealTx = await quizContract.revealAnswer(qRoomCode, currentQIdx, letter, currentQSalt);
         await revealTx.wait();
-        document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer revealed! Waiting for host to score...</div>';
+        document.getElementById("pFeedback").innerHTML='<div class="status status-success"> Answer revealed! Waiting for host to score...</div>';
       } catch(e) { console.log("reveal error:", e.message); }
     }, pTimerSecs * 1000 + 2000);
 
@@ -446,7 +456,7 @@ function submitPAnswer(letter, optText){
   document.querySelectorAll("#pOptions button").forEach(b=>b.disabled=true);
   const r=loadR(qRoomCode);
   if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,selectedLetter:letter,time:Date.now()};saveR(r);}
-  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Answer locked in! Waiting for host to reveal scores...</div>';
+  document.getElementById("pFeedback").innerHTML='<div class="status status-success"> Answer locked in! Waiting for host to reveal scores...</div>';
 }
 
 function autoSubmitP(){
@@ -570,10 +580,11 @@ Find key concepts, facts, technical details, and recent updates that would make 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
 
     // Step 2: Generate questions based on searched knowledge
-    const genResponse = await fetch("/api/quiz", {
+    const genResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + (window._oaiKey || "")
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
@@ -661,16 +672,17 @@ Return JSON only (no markdown, no backticks):
     renderHQList();
 
     const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
-    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
+    status.innerHTML = '<div class="status status-success"> ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
 
   } catch(e) {
     // Fallback: generate from Claude's training knowledge
     status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
     try {
-      const fallback = await fetch("/api/quiz", {
+      const fallback = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Authorization": "Bearer " + (window._oaiKey || "")
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
@@ -697,14 +709,14 @@ Return JSON only (no markdown, no backticks):
       }
       saveR(qRoomData);
       renderHQList();
-      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions added on-chain!</div>';
+      status.innerHTML = '<div class="status status-success"> ' + fr.questions.length + ' questions added on-chain!</div>';
     } catch(e2) {
       status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
     }
   }
 
   btn.disabled = false;
-  btn.innerHTML = "✨ Auto-Search & Generate Questions";
+  btn.innerHTML = "Auto-Search & Generate Questions";
 }
 
 // Update renderHQList to show difficulty badges
@@ -721,7 +733,7 @@ function renderHQListUpdated() {
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
           ${q.options ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">Options: ' + q.options.join(" | ") + '</div>' : (q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0,80) + '</div>' : '')}
-          ${q.correct ? '<div style="font-size:11px;color:#10b981;margin-top:2px">✓ Correct: ' + q.correct + '</div>' : ''}
+          ${q.correct ? '<div style="font-size:11px;color:#10b981;margin-top:2px"> Correct: ' + q.correct + '</div>' : ''}
           ${q.source ? '<div style="font-size:10px;color:var(--muted2);margin-top:3px">🔗 ' + q.source.slice(0,60) + '</div>' : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
@@ -875,10 +887,10 @@ function renderHQListUpdated() {
   </div>
 
   <div class="phases">
-    <div class="phase active" id="phase0"><div class="phase-num">Phase 0</div><div class="phase-name">🏆 Create</div></div>
-    <div class="phase" id="phase1"><div class="phase-num">Phase 1</div><div class="phase-name">🔒 Commit</div></div>
-    <div class="phase" id="phase2"><div class="phase-num">Phase 2</div><div class="phase-name">🔓 Reveal</div></div>
-    <div class="phase" id="phase3"><div class="phase-num">Phase 3</div><div class="phase-name">🤖 Judge</div></div>
+    <div class="phase active" id="phase0"><div class="phase-num">Phase 0</div><div class="phase-name"> Create</div></div>
+    <div class="phase" id="phase1"><div class="phase-num">Phase 1</div><div class="phase-name"> Commit</div></div>
+    <div class="phase" id="phase2"><div class="phase-num">Phase 2</div><div class="phase-name"> Reveal</div></div>
+    <div class="phase" id="phase3"><div class="phase-num">Phase 3</div><div class="phase-name">AI Judge</div></div>
     <div class="phase" id="phase4"><div class="phase-num">Phase 4</div><div class="phase-name">🎉 Finalize</div></div>
   </div>
 
@@ -886,7 +898,7 @@ function renderHQListUpdated() {
     <button class="tab active" onclick="showTab('bounties')">Browse Bounties</button>
     <button class="tab" onclick="showTab('create')">Create Bounty</button>
     <button class="tab" onclick="showTab('participate')">Participate</button>
-    <button class="tab" onclick="showTab('quiz')" style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:white;border-radius:8px">🎯 Quiz Arena</button>
+    <button class="tab" onclick="showTab('quiz')" style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:white;border-radius:8px">Quiz Arena</button>
   </div>
 
   <!-- BROWSE TAB -->
@@ -942,7 +954,7 @@ function renderHQListUpdated() {
           <input id="cRevDL" type="datetime-local"/>
           <label>Prize (RITUAL)</label>
           <input id="cReward" type="number" min="0.001" step="0.001" placeholder="1.0"/>
-          <button class="btn btn-primary" onclick="createBounty()">🏆 Create Bounty</button>
+          <button class="btn btn-primary" onclick="createBounty()"> Create Bounty</button>
           <div id="createStatus"></div>
         </div>
       </div>
@@ -980,24 +992,24 @@ function renderHQListUpdated() {
   <div id="tab-participate" style="display:none">
     <div class="grid">
       <div class="card">
-        <div class="card-header"><div><div class="card-title">🔒 Submit Commitment</div><div class="card-sub">Your answer stays hidden until reveal phase</div></div></div>
+        <div class="card-header"><div><div class="card-title"> Submit Commitment</div><div class="card-sub">Your answer stays hidden until reveal phase</div></div></div>
         <div class="card-body">
           <label>Bounty ID</label>
           <input id="pBountyId" type="number" placeholder="1" min="1"/>
           <label>Your Answer</label>
           <textarea id="pAnswer" placeholder="Write your answer here..."></textarea>
           <div class="hint">Your answer will NOT be stored on-chain yet — only its hash.</div>
-          <button class="btn btn-primary" onclick="submitCommitment()">🔒 Submit Commitment</button>
+          <button class="btn btn-primary" onclick="submitCommitment()"> Submit Commitment</button>
           <div id="commitStatus"></div>
           <div id="saltBox" style="display:none" class="salt-box">
-            <div class="salt-box-title">⚠️ SAVE YOUR SALT — You need this to reveal!</div>
+            <div class="salt-box-title">Note: SAVE YOUR SALT — You need this to reveal!</div>
             <div class="salt-value" id="saltValue"></div>
           </div>
         </div>
       </div>
 
       <div class="card">
-        <div class="card-header"><div><div class="card-title">🔓 Reveal Answer</div><div class="card-sub">After commit deadline passes</div></div></div>
+        <div class="card-header"><div><div class="card-title"> Reveal Answer</div><div class="card-sub">After commit deadline passes</div></div></div>
         <div class="card-body">
           <label>Bounty ID</label>
           <input id="rBountyId" type="number" placeholder="1" min="1"/>
@@ -1005,7 +1017,7 @@ function renderHQListUpdated() {
           <textarea id="rAnswer" placeholder="Must match your committed answer exactly..."></textarea>
           <label>Your Salt</label>
           <input id="rSalt" placeholder="0x... (from when you committed)" class="mono"/>
-          <button class="btn btn-green" onclick="revealAnswer()">🔓 Reveal Answer</button>
+          <button class="btn btn-green" onclick="revealAnswer()"> Reveal Answer</button>
           <div id="revealStatus"></div>
         </div>
       </div>
@@ -1048,14 +1060,14 @@ function renderHQListUpdated() {
             <div style="font-size:52px;margin-bottom:16px">🎙️</div>
             <div style="font-size:18px;font-weight:800;margin-bottom:10px">I'm a Host</div>
             <div style="font-size:13px;color:var(--muted);line-height:1.6">Create a quiz room, pick a topic, AI auto-generates questions from Ritual docs. Control rounds and scoring.</div>
-            <div style="margin-top:20px;background:var(--purple);color:white;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;display:inline-block">Create Room →</div>
+            <div style="margin-top:20px;background:var(--purple);color:white;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;display:inline-block">Create Room</div>
           </div>
 
           <div onclick="selectRole('player')" style="background:var(--card);border:2px solid var(--border);border-radius:16px;padding:32px;text-align:center;cursor:pointer;transition:all 0.2s" onmouseover="this.style.borderColor='#10b981';this.style.background='rgba(16,185,129,0.08)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--card)'">
             <div style="font-size:52px;margin-bottom:16px">🎮</div>
             <div style="font-size:18px;font-weight:800;margin-bottom:10px">I'm a Player</div>
             <div style="font-size:13px;color:var(--muted);line-height:1.6">Enter a room code from your host, answer questions before the timer runs out, climb the live leaderboard.</div>
-            <div style="margin-top:20px;background:#10b981;color:white;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;display:inline-block">Join Game →</div>
+            <div style="margin-top:20px;background:#10b981;color:white;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:700;display:inline-block">Join Game</div>
           </div>
 
         </div>
@@ -1065,22 +1077,22 @@ function renderHQListUpdated() {
           <div style="font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:16px">How it works</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:16px;text-align:center">
             <div>
-              <div style="font-size:24px;margin-bottom:8px">🤖</div>
+              <div style="font-size:24px;margin-bottom:8px">AI</div>
               <div style="font-size:12px;font-weight:700;margin-bottom:4px">AI Generates</div>
               <div style="font-size:11px;color:var(--muted)">Questions from Ritual docs & web</div>
             </div>
             <div>
-              <div style="font-size:24px;margin-bottom:8px">⏱️</div>
+              <div style="font-size:24px;margin-bottom:8px"></div>
               <div style="font-size:12px;font-weight:700;margin-bottom:4px">Timed Rounds</div>
               <div style="font-size:11px;color:var(--muted)">Answer before countdown ends</div>
             </div>
             <div>
-              <div style="font-size:24px;margin-bottom:8px">📊</div>
+              <div style="font-size:24px;margin-bottom:8px"></div>
               <div style="font-size:12px;font-weight:700;margin-bottom:4px">AI Scores All</div>
               <div style="font-size:11px;color:var(--muted)">Fair scoring by GPT-4o-mini</div>
             </div>
             <div>
-              <div style="font-size:24px;margin-bottom:8px">🏆</div>
+              <div style="font-size:24px;margin-bottom:8px"></div>
               <div style="font-size:12px;font-weight:700;margin-bottom:4px">Live Leaderboard</div>
               <div style="font-size:11px;color:var(--muted)">See rankings after each round</div>
             </div>
@@ -1096,7 +1108,7 @@ function renderHQListUpdated() {
         <div class="card" id="hostSetupCard">
           <div class="card-header">
             <div>
-              <div class="card-title">🎙️ Create Quiz Room</div>
+              <div class="card-title">Create Quiz Room</div>
               <div class="card-sub">AI auto-searches Ritual docs, Twitter, GitHub to generate questions</div>
             </div>
             <button onclick="selectRole(null)" class="btn btn-outline btn-sm">← Back</button>
@@ -1116,7 +1128,7 @@ function renderHQListUpdated() {
             <input id="hTimer" type="number" value="30" min="10" max="120"/>
             <!-- AI searches docs automatically - no need to paste -->
             <input type="hidden" id="hContext" value=""/>
-            <button class="btn btn-primary" onclick="createQuizRoom()">Create Room 🚀</button>
+            <button class="btn btn-primary" onclick="createQuizRoom()">Create Room </button>
             <div id="hostSetupStatus"></div>
           </div>
         </div>
@@ -1134,7 +1146,7 @@ function renderHQListUpdated() {
 
             <!-- AI Generate Questions -->
             <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.3);border-radius:10px;padding:14px;margin-bottom:12px">
-              <div style="font-size:12px;font-weight:700;color:var(--purple-light);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px">🤖 AI Generate Questions</div>
+              <div style="font-size:12px;font-weight:700;color:var(--purple-light);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:10px">AI Generate Questions</div>
 
               <select id="aiQTopic" onchange="document.getElementById('aiCustomTopic').style.display=this.value==='custom'?'':'none'" style="width:100%;background:rgba(255,255,255,0.04);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-size:13px;outline:none;margin-bottom:8px">
                 <option value="ritual">Ritual Chain & AI Precompiles</option>
@@ -1177,7 +1189,7 @@ function renderHQListUpdated() {
                 </label>
               </div>
 
-              <button onclick="aiGenerateQuestions()" class="btn btn-primary" style="margin-top:0;width:100%" id="aiGenBtn">✨ Auto-Search & Generate Questions</button>
+              <button onclick="aiGenerateQuestions()" class="btn btn-primary" style="margin-top:0;width:100%" id="aiGenBtn">Auto-Search & Generate Questions</button>
               <div id="aiGenStatus" style="margin-top:8px"></div>
             </div>
 
@@ -1185,19 +1197,19 @@ function renderHQListUpdated() {
               <label style="margin-top:0">Or Add Manually</label>
               <input id="newQ" placeholder="Question..." style="margin-bottom:8px"/>
               <input id="newA" placeholder="Model answer (AI reference)..." style="margin-bottom:8px"/>
-              <button class="btn btn-outline" onclick="addQ()" style="margin-top:0;padding:8px 16px;width:auto">+ Add</button>
+              <button class="btn btn-outline" onclick="addQ()" style="margin-top:0;padding:8px 16px;width:auto">Add Question</button>
             </div>
           </div>
         </div>
 
         <div class="card full" id="hostCtrlCard" style="display:none">
           <div class="card-header">
-            <div><div class="card-title">🎮 Game Controls</div><div class="card-sub" id="hStatus">Ready</div></div>
+            <div><div class="card-title">Game Controls</div><div class="card-sub" id="hStatus">Ready</div></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-              <button class="btn btn-primary btn-sm" id="hStartBtn" onclick="hostStartRound()">▶ Start Round</button>
-              <button class="btn btn-outline btn-sm" id="hScoreBtn" onclick="hostShowScores()" style="display:none">📊 Score</button>
-              <button class="btn btn-outline btn-sm" id="hNextBtn" onclick="hostNext()" style="display:none">→ Next</button>
-              <button onclick="switchToPlayer()" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.4);color:#10b981;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">🎮 Join as Player</button>
+              <button class="btn btn-primary btn-sm" id="hStartBtn" onclick="hostStartRound()">Start Round</button>
+              <button class="btn btn-outline btn-sm" id="hScoreBtn" onclick="hostShowScores()" style="display:none">Score</button>
+              <button class="btn btn-outline btn-sm" id="hNextBtn" onclick="hostNext()" style="display:none">Next Question</button>
+              <button onclick="switchToPlayer()" style="background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.4);color:#10b981;padding:6px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">Join as Player</button>
             </div>
           </div>
           <div class="card-body">
@@ -1225,7 +1237,7 @@ function renderHQListUpdated() {
       <div class="grid">
         <div class="card" id="pJoinCard">
           <div class="card-header">
-            <div><div class="card-title">🎮 Join Quiz</div></div>
+            <div><div class="card-title">Join Quiz</div></div>
             <button onclick="selectRole(null)" class="btn btn-outline btn-sm">← Back</button>
           </div>
           <div class="card-body">
@@ -1233,14 +1245,14 @@ function renderHQListUpdated() {
             <input id="pName" placeholder="web3aunty"/>
             <label>Room Code</label>
             <input id="pCode" placeholder="ABC123" style="font-size:22px;font-weight:700;text-align:center;letter-spacing:4px;text-transform:uppercase"/>
-            <button class="btn btn-primary" onclick="joinRoom()">Join 🚀</button>
+            <button class="btn btn-primary" onclick="joinRoom()">Join </button>
             <div id="joinStatus"></div>
           </div>
         </div>
 
         <div class="card" id="pWaitCard" style="display:none">
           <div class="card-body" style="text-align:center;padding:40px">
-            <div style="font-size:48px;margin-bottom:16px">⏳</div>
+            <div style="font-size:48px;margin-bottom:16px"></div>
             <div style="font-size:16px;font-weight:700;margin-bottom:8px">Waiting for host...</div>
             <div id="pWaitInfo" style="font-size:13px;color:var(--muted)"></div>
           </div>
@@ -1260,13 +1272,13 @@ function renderHQListUpdated() {
             </div>
             <div id="pQText" style="font-size:16px;font-weight:700;line-height:1.5;margin-bottom:16px;background:rgba(255,255,255,0.04);padding:16px;border-radius:10px">Loading...</div>
             <textarea id="pAnswerText" rows="4" placeholder="Type your answer here..."></textarea>
-            <button class="btn btn-primary" onclick="submitPAnswer()" id="pSubmitBtn">Submit ✓</button>
+            <button class="btn btn-primary" onclick="submitPAnswer()" id="pSubmitBtn">Submit </button>
             <div id="pFeedback"></div>
           </div>
         </div>
 
         <div class="card full" id="pScoreCard" style="display:none">
-          <div class="card-header"><div><div class="card-title">📊 Leaderboard</div></div></div>
+          <div class="card-header"><div><div class="card-title">Leaderboard</div></div></div>
           <div class="card-body">
             <div id="pLeaderboard"></div>
             <div id="pWaitNext" style="text-align:center;margin-top:12px;font-size:13px;color:var(--muted)">Waiting for host to continue...</div>
@@ -1323,14 +1335,14 @@ async function connectWallet() {
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
     quizContract = new ethers.Contract(QUIZ_ADDRESS, QUIZ_ABI, signer);
     ritualWallet = new ethers.Contract(RITUAL_WALLET, ABI, signer);
-    document.getElementById("walletSection").innerHTML = `<div id="walletInfo">✓ ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
+    document.getElementById("walletSection").innerHTML = `<div id="walletInfo"> ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
     // Show RitualWallet balance
     const rwBal = await ritualWallet.balanceOf(userAddress);
     const balEth = ethers.formatEther(rwBal);
     if (parseFloat(balEth) === 0) {
       const notice = document.createElement("div");
       notice.style = "position:fixed;bottom:20px;right:20px;background:#13131a;border:1px solid rgba(245,158,11,0.4);color:#f59e0b;padding:12px 16px;border-radius:10px;font-size:12px;z-index:999;max-width:280px";
-      notice.innerHTML = `⚠️ RitualWallet balance: 0 CRAT<br><small>Fund it to enable AI judging</small><br><button onclick="depositRitualWallet();this.parentElement.remove()" style="margin-top:8px;background:#f59e0b;color:#000;border:none;padding:6px 12px;border-radius:6px;font-weight:700;cursor:pointer;width:100%">Deposit 0.1 CRAT</button>`;
+      notice.innerHTML = `Note: RitualWallet balance: 0 CRAT<br><small>Fund it to enable AI judging</small><br><button onclick="depositRitualWallet();this.parentElement.remove()" style="margin-top:8px;background:#f59e0b;color:#000;border:none;padding:6px 12px;border-radius:6px;font-weight:700;cursor:pointer;width:100%">Deposit 0.1 CRAT</button>`;
       document.body.appendChild(notice);
       setTimeout(() => notice.remove(), 10000);
     }
@@ -1351,12 +1363,12 @@ async function loadBounties() {
       const now = Date.now() / 1000;
       const subDL = Number(b.submissionDeadline);
       const revDL = Number(b.revealDeadline);
-      let status = "🟢 Commit Phase";
+      let status = "● Commit Phase";
       let badgeClass = "badge-green";
-      if (b.finalized) { status = "✅ Finalized"; badgeClass = "badge-purple"; }
-      else if (b.judged) { status = "🤖 Judged"; badgeClass = "badge-purple"; }
-      else if (now > revDL) { status = "⏳ Ready to Judge"; badgeClass = "badge-amber"; }
-      else if (now > subDL) { status = "🔓 Reveal Phase"; badgeClass = "badge-amber"; }
+      if (b.finalized) { status = " Finalized"; badgeClass = "badge-purple"; }
+      else if (b.judged) { status = "AI Judged"; badgeClass = "badge-purple"; }
+      else if (now > revDL) { status = " Ready to Judge"; badgeClass = "badge-amber"; }
+      else if (now > subDL) { status = " Reveal Phase"; badgeClass = "badge-amber"; }
       const reward = ethers.formatEther(b.reward);
       const div = document.createElement("div");
       div.className = "bounty-item";
@@ -1396,16 +1408,16 @@ async function showBountyDetail(id, b, status, badgeClass) {
   const isOwner = userAddress && b.owner.toLowerCase() === userAddress.toLowerCase();
   let actions = "";
   if (!b.judged && !b.finalized && now < subDL) {
-    actions = `<div class="status status-info">🔒 Commit phase open — go to Participate tab to submit!</div>`;
+    actions = `<div class="status status-info"> Commit phase open — go to Participate tab to submit!</div>`;
   } else if (!b.judged && !b.finalized && now >= subDL && now < revDL) {
-    actions = `<div class="status status-warning">🔓 Reveal phase open — go to Participate tab to reveal!</div>`;
+    actions = `<div class="status status-warning"> Reveal phase open — go to Participate tab to reveal!</div>`;
   } else if (!b.judged && !b.finalized && now >= revDL && isOwner) {
     actions = `
-      <button class="btn btn-amber" onclick="judgeAll(${id}, {title:'${b.title.replace(/'/g,"\\'")}', rubric:'${b.rubric.replace(/'/g,"\\'")}'})" style="margin-bottom:8px">🤖 Judge All (Owner Only)</button>
+      <button class="btn btn-amber" onclick="judgeAll(${id}, {title:'${b.title.replace(/'/g,"\\'")}', rubric:'${b.rubric.replace(/'/g,"\\'")}'})" style="margin-bottom:8px">AI Judge All (Owner Only)</button>
       <button class="btn btn-outline" onclick="depositRitualWallet()" style="margin-top:4px;font-size:12px">+ Fund RitualWallet</button>
     `;
   } else if (b.judged && !b.finalized && isOwner) {
-    actions = `<label>Winner Index</label><input id="winnerIdx" type="number" min="0" placeholder="0"/><button class="btn btn-green" onclick="finalizeWinner(${id})">🏆 Finalize Winner</button>`;
+    actions = `<label>Winner Index</label><input id="winnerIdx" type="number" min="0" placeholder="0"/><button class="btn btn-green" onclick="finalizeWinner(${id})"> Finalize Winner</button>`;
   } else if (b.finalized) {
     actions = `<div class="status status-success">🎉 Bounty finalized! Winner: submission #${b.winnerIndex}</div>`;
   }
@@ -1430,9 +1442,9 @@ async function createBounty() {
     const tx = await contract.createBounty(title, rubric, subDL, revDL, { value: ethers.parseEther(reward.trim()) });
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
     const receipt = await tx.wait();
-    status.innerHTML = `<div class="status status-success">✅ Bounty created! Tx: ${receipt.hash.slice(0,10)}...</div>`;
+    status.innerHTML = `<div class="status status-success"> Bounty created! Tx: ${receipt.hash.slice(0,10)}...</div>`;
     loadBounties();
-  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+  } catch(e) { status.innerHTML = `<div class="status status-error">Error: ${e.reason || e.message}</div>`; }
 }
 
 async function submitCommitment() {
@@ -1448,11 +1460,11 @@ async function submitCommitment() {
     const tx = await contract.submitCommitment(bountyId, commitment);
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
     await tx.wait();
-    status.innerHTML = '<div class="status status-success">✅ Commitment submitted! Save your salt below.</div>';
+    status.innerHTML = '<div class="status status-success"> Commitment submitted! Save your salt below.</div>';
     document.getElementById("saltBox").style.display = "block";
     document.getElementById("saltValue").textContent = salt;
     document.getElementById("pAnswer").value = "";
-  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+  } catch(e) { status.innerHTML = `<div class="status status-error">Error: ${e.reason || e.message}</div>`; }
 }
 
 async function revealAnswer() {
@@ -1467,8 +1479,8 @@ async function revealAnswer() {
     const tx = await contract.revealAnswer(bountyId, answer, salt);
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for confirmation...</div>';
     await tx.wait();
-    status.innerHTML = '<div class="status status-success">✅ Answer revealed! You are now eligible for judging.</div>';
-  } catch(e) { status.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`; }
+    status.innerHTML = '<div class="status status-success"> Answer revealed! You are now eligible for judging.</div>';
+  } catch(e) { status.innerHTML = `<div class="status status-error">Error: ${e.reason || e.message}</div>`; }
 }
 
 async function judgeAll(bountyId, bountyData) {
@@ -1521,10 +1533,10 @@ async function judgeAll(bountyId, bountyData) {
     const tx = await contract.judgeAll(bountyId, llmInput);
     st.innerHTML = '<div class="status status-info"><span class="spinner"></span>Waiting for Ritual TEE response...</div>';
     const receipt = await tx.wait();
-    st.innerHTML = `<div class="status status-success">✅ Judging complete! Tx: ${receipt.hash.slice(0,10)}... — Refresh to see AI verdict.</div>`;
+    st.innerHTML = `<div class="status status-success"> Judging complete! Tx: ${receipt.hash.slice(0,10)}... — Refresh to see AI verdict.</div>`;
     loadBounties();
   } catch(e) {
-    st.innerHTML = `<div class="status status-error">❌ ${e.reason || e.message}</div>`;
+    st.innerHTML = `<div class="status status-error">Error: ${e.reason || e.message}</div>`;
   }
 }
 
@@ -1533,7 +1545,7 @@ async function depositRitualWallet() {
   try {
     const tx = await ritualWallet.deposit(0, { value: ethers.parseEther("0.1") });
     await tx.wait();
-    alert("✅ Deposited 0.1 CRAT into RitualWallet! Now try judgeAll again.");
+    alert(" Deposited 0.1 CRAT into RitualWallet! Now try judgeAll again.");
   } catch(e) {
     alert("Error: " + (e.reason || e.message));
   }
@@ -1603,7 +1615,7 @@ function switchToPlayer() {
     backBtn = document.createElement("div");
     backBtn.id = "backToHostBtn";
     backBtn.style = "position:fixed;bottom:80px;right:20px;z-index:999;background:var(--purple);color:white;padding:10px 18px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(124,58,237,0.4)";
-    backBtn.innerHTML = "🎙️ Back to Host";
+    backBtn.innerHTML = "Back to Host";
     backBtn.onclick = switchBackToHost;
     document.body.appendChild(backBtn);
   }
@@ -1764,7 +1776,7 @@ async function hostShowScores(){
       try {
         const finTx = await quizContract.finalizeRoom(qRoomCode);
         await finTx.wait();
-        document.getElementById("hStatus").textContent="✅ Quiz finalized! Winner paid on-chain.";
+        document.getElementById("hStatus").textContent=" Quiz finalized! Winner paid on-chain.";
       } catch(e) { console.log("finalize error:", e.message); }
     }
   } catch(e){
@@ -1914,14 +1926,14 @@ async function submitOnChainAnswer(letter) {
     local.myAnswers[currentQIdx] = { answer: letter, salt: currentQSalt };
     saveR({...local, code: qRoomCode, roomId: qRoomCode});
 
-    document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer committed on-chain! Waiting for reveal phase...</div>';
+    document.getElementById("pFeedback").innerHTML='<div class="status status-success"> Answer committed on-chain! Waiting for reveal phase...</div>';
 
     // Auto-reveal after deadline
     setTimeout(async () => {
       try {
         const revealTx = await quizContract.revealAnswer(qRoomCode, currentQIdx, letter, currentQSalt);
         await revealTx.wait();
-        document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer revealed! Waiting for host to score...</div>';
+        document.getElementById("pFeedback").innerHTML='<div class="status status-success"> Answer revealed! Waiting for host to score...</div>';
       } catch(e) { console.log("reveal error:", e.message); }
     }, pTimerSecs * 1000 + 2000);
 
@@ -2001,7 +2013,7 @@ function submitPAnswer(letter, optText){
   document.querySelectorAll("#pOptions button").forEach(b=>b.disabled=true);
   const r=loadR(qRoomCode);
   if(r){r.answers=r.answers||{};r.answers[pName]={text:ans,selectedLetter:letter,time:Date.now()};saveR(r);}
-  document.getElementById("pFeedback").innerHTML='<div class="status status-success">✓ Answer locked in! Waiting for host to reveal scores...</div>';
+  document.getElementById("pFeedback").innerHTML='<div class="status status-success"> Answer locked in! Waiting for host to reveal scores...</div>';
 }
 
 function autoSubmitP(){
@@ -2125,7 +2137,7 @@ Find key concepts, facts, technical details, and recent updates that would make 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
 
     // Step 2: Generate questions based on searched knowledge
-    const genResponse = await fetch("/api/quiz", {
+    const genResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -2216,13 +2228,13 @@ Return JSON only (no markdown, no backticks):
     renderHQList();
 
     const srcsUsed = (result.sourcesUsed || []).slice(0, 3).join(", ");
-    status.innerHTML = '<div class="status status-success">✅ ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
+    status.innerHTML = '<div class="status status-success"> ' + added + ' questions added to blockchain!' + (srcsUsed ? '<br><small style="opacity:0.7">Sources: ' + srcsUsed + '</small>' : '') + '</div>';
 
   } catch(e) {
     // Fallback: generate from Claude's training knowledge
     status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
     try {
-      const fallback = await fetch("/api/quiz", {
+      const fallback = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json"
@@ -2252,14 +2264,14 @@ Return JSON only (no markdown, no backticks):
       }
       saveR(qRoomData);
       renderHQList();
-      status.innerHTML = '<div class="status status-success">✅ ' + fr.questions.length + ' questions added on-chain!</div>';
+      status.innerHTML = '<div class="status status-success"> ' + fr.questions.length + ' questions added on-chain!</div>';
     } catch(e2) {
       status.innerHTML = '<div class="status status-error">Error: ' + e2.message + '</div>';
     }
   }
 
   btn.disabled = false;
-  btn.innerHTML = "✨ Auto-Search & Generate Questions";
+  btn.innerHTML = "Auto-Search & Generate Questions";
 }
 
 // Update renderHQList to show difficulty badges
@@ -2276,7 +2288,7 @@ function renderHQListUpdated() {
         <div style="flex:1;margin-right:8px">
           <div style="font-size:13px;font-weight:600;margin-bottom:4px">${i+1}. ${q.q}</div>
           ${q.options ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">Options: ' + q.options.join(" | ") + '</div>' : (q.modelAnswer ? '<div style="font-size:11px;color:var(--muted)">📝 ' + q.modelAnswer.slice(0,80) + '</div>' : '')}
-          ${q.correct ? '<div style="font-size:11px;color:#10b981;margin-top:2px">✓ Correct: ' + q.correct + '</div>' : ''}
+          ${q.correct ? '<div style="font-size:11px;color:#10b981;margin-top:2px"> Correct: ' + q.correct + '</div>' : ''}
           ${q.source ? '<div style="font-size:10px;color:var(--muted2);margin-top:3px">🔗 ' + q.source.slice(0,60) + '</div>' : ''}
         </div>
         <div style="display:flex;align-items:center;gap:6px;flex-shrink:0">
