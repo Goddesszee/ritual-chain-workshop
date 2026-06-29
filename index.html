@@ -7,14 +7,6 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js">
 // ── QUIZ ARENA ─────────────────────────────────────────────────────
 
-async function initQuizContract() {
-  if (!signer) return;
-  quizContract = new ethers.Contract(QUIZ_ADDRESS, QUIZ_ABI, signer);
-}
-// ── QUIZ ARENA ─────────────────────────────────────────────────────
-let qRole=null, qRoomCode=null, qRoomData=null;
-let hPollInt=null, pPollInt=null, pTimerInt=null;
-let pName="", pScore=0, qIdx=0, pAnswered=false, pTimerSecs=30;
 
 
 </script>
@@ -427,8 +419,8 @@ async function showBountyDetail(id, b, status, badgeClass) {
   document.getElementById("detailCount").textContent = b.submissionCount.toString();
   document.getElementById("detailRubric").textContent = b.rubric;
 
-  const now = Date.now() / 1000;
-  const subDL = Number(b.submissionDeadline);
+  const now = Date.now(); // ms
+  const subDL = Number(b.submissionDeadline); // ms
   const revDL = Number(b.revealDeadline);
   const isOwner = userAddress && b.owner.toLowerCase() === userAddress.toLowerCase();
   let actions = "";
