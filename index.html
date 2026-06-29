@@ -6,6 +6,24 @@
 <title>NAN Bounty Judge — Privacy-Preserving AI Bounty System</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.7.0/ethers.umd.min.js">
 // ── QUIZ ARENA ─────────────────────────────────────────────────────
+let OPENAI_KEY = localStorage.getItem("oai_key") || "";
+
+function saveOpenAIKey() {
+  const k = document.getElementById("oaiKeyInput").value.trim();
+  if (!k.startsWith("sk-")) { alert("Invalid OpenAI key — must start with sk-"); return; }
+  OPENAI_KEY = k;
+  localStorage.setItem("oai_key", k);
+  document.getElementById("oaiKeyPanel").style.display = "none";
+  document.getElementById("quizRoleSelector").style.display = "";
+}
+
+function checkOpenAIKey() {
+  if (!OPENAI_KEY) {
+    document.getElementById("quizRoleSelector").style.display = "none";
+    document.getElementById("oaiKeyPanel").style.display = "";
+  }
+}
+// ── QUIZ ARENA ─────────────────────────────────────────────────────
 let qRole=null, qRoomCode=null, qRoomData=null;
 let hPollInt=null, pPollInt=null, pTimerInt=null;
 let pName="", pScore=0, qIdx=0, pAnswered=false, pTimerSecs=30;
@@ -108,7 +126,7 @@ async function hostShowScores(){
   try {
     const ansList=Object.entries(ans).map(([n,a])=>n+": "+a.text).join("\n");
     const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers:{"Content-Type":"application/json","anthropic-dangerous-direct-browser-calls":"true"},
+      method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:`You are a blockchain quiz judge. Score each answer 0-100.\n\nCONTEXT:\n${qRoomData.context||"General blockchain"}\n\nQUESTION: ${q.q}\n${q.modelAnswer?"MODEL ANSWER: "+q.modelAnswer:""}\n\nANSWERS:\n${ansList}\n\nReturn JSON only: {"scores":[{"name":"string","score":0,"feedback":"one sentence"}]}`}]})
     });
     const data=await res.json();
@@ -319,55 +337,51 @@ Find key concepts, facts, technical details, and recent updates that would make 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
 
     // Step 2: Generate questions based on searched knowledge
-    const genResponse = await fetch("https://api.anthropic.com/v1/messages", {
+    const genResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "anthropic-dangerous-direct-browser-calls": "true"
+        "Authorization": "Bearer " + OPENAI_KEY
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "gpt-4o-mini",
         max_tokens: 4000,
-        tools: [{
-          type: "web_search_20250305",
-          name: "web_search"
-        }],
-        messages: [{
-          role: "user",
-          content: `You are a blockchain quiz creator. Search the web to find current, accurate information about "${topicLabel}", then create ${count} quiz questions based on what you find.
+        messages: [
+          {
+            role: "system",
+            content: "You are a blockchain quiz creator with deep knowledge of Ritual Chain, DeFi, Web3, Solidity, and blockchain technology. You create accurate, educational quiz questions based on real facts."
+          },
+          {
+            role: "user",
+            content: `Create exactly ${count} quiz questions about "${topicLabel}".
 
-Search these specific sources:
-${topic === "ritual" ? `- https://docs.ritualfoundation.org (Ritual documentation)
-- Twitter/X posts from @ritualnet
-- GitHub: github.com/ritual-net
-- Ritual Chain blog and announcements
-- Recent news about Ritual Chain 2024 2025` : sources.map(s => "- " + s).join("\n")}
+Key facts about Ritual Chain to use if topic is ritual:
+- Ritual Chain is an EVM-compatible blockchain with native AI precompiles
+- LLM inference precompile is at address 0x0802
+- HTTP call precompile is at address 0x0801
+- block.timestamp uses milliseconds not seconds on Ritual Chain
+- Ritual uses TEE (Trusted Execution Environment) for private AI computation
+- Chain ID is 1979
+- Native token is CRAT
+- RitualWallet contract handles compute payments
+- Supports batch LLM judging in a single transaction
+- Founded to bring AI natively on-chain
 
-After searching, generate exactly ${count} quiz questions. Mix difficulty levels (easy/medium/hard). Base questions on REAL facts you found.
+Sources to base questions on: ${sources.join(", ")}
 
-Return JSON only (no markdown):
-{
-  "sourcesUsed": ["list of sources you found info from"],
-  "questions": [
-    {
-      "q": "question text",
-      "modelAnswer": "accurate answer based on what you found",
-      "difficulty": "easy|medium|hard",
-      "source": "where this fact came from"
-    }
-  ]
-}`
-        }]
+Mix difficulty: easy (30%), medium (40%), hard (30%).
+Make questions specific, factual and educational.
+
+Return JSON only (no markdown, no backticks):
+{"sourcesUsed":["Ritual Chain docs","blockchain knowledge"],"questions":[{"q":"question text","modelAnswer":"accurate concise answer","difficulty":"easy|medium|hard","source":"source name"}]}`
+          }
+        ]
       })
     });
 
     const genData = await genResponse.json();
-
-    // Extract text from potentially multi-block response
-    const allText = (genData.content || [])
-      .filter(b => b.type === "text")
-      .map(b => b.text)
-      .join("\n");
+    if (genData.error) throw new Error(genData.error.message);
+    const allText = genData.choices[0].message.content;
 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 3: Processing ' + count + ' questions...</div>';
 
@@ -397,26 +411,24 @@ Return JSON only (no markdown):
     // Fallback: generate from Claude's training knowledge
     status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
     try {
-      const fallback = await fetch("https://api.anthropic.com/v1/messages", {
+      const fallback = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "anthropic-dangerous-direct-browser-calls": "true"
+          "Authorization": "Bearer " + OPENAI_KEY
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: "gpt-4o-mini",
           max_tokens: 3000,
-          messages: [{
-            role: "user",
-            content: `Generate ${count} quiz questions about "${topicLabel}" for a blockchain quiz. Include easy, medium and hard questions. Base questions on accurate technical knowledge.
-
-Return JSON only:
-{"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}`
-          }]
+          messages: [
+            { role: "system", content: "You are a blockchain quiz creator. Return only valid JSON." },
+            { role: "user", content: `Generate ${count} quiz questions about "${topicLabel}". Mix easy/medium/hard. Return JSON only: {"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}` }
+          ]
         })
       });
       const fd = await fallback.json();
-      const ft = fd.content[0].text.replace(/\`\`\`json|\`\`\`/g,"").trim();
+      if (fd.error) throw new Error(fd.error.message);
+      const ft = fd.choices[0].message.content.replace(/\`\`\`json|\`\`\`/g,"").trim();
       const fr = JSON.parse(ft);
       fr.questions.forEach(q => { qRoomData.questions.push({q:q.q,modelAnswer:q.modelAnswer,difficulty:q.difficulty}); });
       saveR(qRoomData);
@@ -737,8 +749,28 @@ function renderHQListUpdated() {
 
   <!-- QUIZ ARENA TAB -->
   <div id="tab-quiz" style="display:none">
+    <!-- OpenAI Key Panel -->
+    <div id="oaiKeyPanel" style="display:none;max-width:500px;margin:0 auto">
+      <div class="card">
+        <div class="card-header"><div><div class="card-title">🔑 OpenAI API Key Required</div><div class="card-sub">Needed for AI question generation and scoring</div></div></div>
+        <div class="card-body">
+          <div class="status status-info" style="margin-bottom:16px">
+            The Quiz Arena uses OpenAI GPT-4o-mini to generate questions and score answers. Your key is saved locally in your browser only.
+          </div>
+          <label>Your OpenAI API Key</label>
+          <input id="oaiKeyInput" type="password" placeholder="sk-..." style="margin-bottom:12px"/>
+          <div class="hint">Get your key at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--purple-light)">platform.openai.com/api-keys</a></div>
+          <button class="btn btn-primary" onclick="saveOpenAIKey()">Save & Continue →</button>
+          <button class="btn btn-outline" onclick="document.getElementById('oaiKeyPanel').style.display='none';document.getElementById('quizRoleSelector').style.display='';" style="margin-top:8px">Skip (manual questions only)</button>
+        </div>
+      </div>
+    </div>
+
     <div id="quizRoleSelector">
       <div class="grid" style="max-width:600px;margin:0 auto">
+        <div style="text-align:right;margin-bottom:8px">
+          <button onclick="localStorage.removeItem('oai_key');OPENAI_KEY='';checkOpenAIKey()" style="background:none;border:none;color:var(--muted);font-size:11px;cursor:pointer">🔑 Change API key</button>
+        </div>
         <div class="card" style="cursor:pointer" onclick="selectRole('host')">
           <div class="card-body" style="text-align:center;padding:32px">
             <div style="font-size:48px;margin-bottom:12px">🎙️</div>
@@ -1212,6 +1244,7 @@ async function finalizeWinner(bountyId) {
 }
 
 function showTab(tab) {
+  if (tab === "quiz" && !OPENAI_KEY) { checkOpenAIKey(); }
   ["bounties","create","participate","quiz"].forEach(t => {
     document.getElementById("tab-" + t).style.display = t === tab ? "" : "none";
   });
@@ -1331,7 +1364,7 @@ async function hostShowScores(){
   try {
     const ansList=Object.entries(ans).map(([n,a])=>n+": "+a.text).join("\n");
     const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",headers:{"Content-Type":"application/json","anthropic-dangerous-direct-browser-calls":"true"},
+      method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1000,messages:[{role:"user",content:`You are a blockchain quiz judge. Score each answer 0-100.\n\nCONTEXT:\n${qRoomData.context||"General blockchain"}\n\nQUESTION: ${q.q}\n${q.modelAnswer?"MODEL ANSWER: "+q.modelAnswer:""}\n\nANSWERS:\n${ansList}\n\nReturn JSON only: {"scores":[{"name":"string","score":0,"feedback":"one sentence"}]}`}]})
     });
     const data=await res.json();
@@ -1542,55 +1575,51 @@ Find key concepts, facts, technical details, and recent updates that would make 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 2: AI reading sources and extracting knowledge...</div>';
 
     // Step 2: Generate questions based on searched knowledge
-    const genResponse = await fetch("https://api.anthropic.com/v1/messages", {
+    const genResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "anthropic-dangerous-direct-browser-calls": "true"
+        "Authorization": "Bearer " + OPENAI_KEY
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
+        model: "gpt-4o-mini",
         max_tokens: 4000,
-        tools: [{
-          type: "web_search_20250305",
-          name: "web_search"
-        }],
-        messages: [{
-          role: "user",
-          content: `You are a blockchain quiz creator. Search the web to find current, accurate information about "${topicLabel}", then create ${count} quiz questions based on what you find.
+        messages: [
+          {
+            role: "system",
+            content: "You are a blockchain quiz creator with deep knowledge of Ritual Chain, DeFi, Web3, Solidity, and blockchain technology. You create accurate, educational quiz questions based on real facts."
+          },
+          {
+            role: "user",
+            content: `Create exactly ${count} quiz questions about "${topicLabel}".
 
-Search these specific sources:
-${topic === "ritual" ? `- https://docs.ritualfoundation.org (Ritual documentation)
-- Twitter/X posts from @ritualnet
-- GitHub: github.com/ritual-net
-- Ritual Chain blog and announcements
-- Recent news about Ritual Chain 2024 2025` : sources.map(s => "- " + s).join("\n")}
+Key facts about Ritual Chain to use if topic is ritual:
+- Ritual Chain is an EVM-compatible blockchain with native AI precompiles
+- LLM inference precompile is at address 0x0802
+- HTTP call precompile is at address 0x0801
+- block.timestamp uses milliseconds not seconds on Ritual Chain
+- Ritual uses TEE (Trusted Execution Environment) for private AI computation
+- Chain ID is 1979
+- Native token is CRAT
+- RitualWallet contract handles compute payments
+- Supports batch LLM judging in a single transaction
+- Founded to bring AI natively on-chain
 
-After searching, generate exactly ${count} quiz questions. Mix difficulty levels (easy/medium/hard). Base questions on REAL facts you found.
+Sources to base questions on: ${sources.join(", ")}
 
-Return JSON only (no markdown):
-{
-  "sourcesUsed": ["list of sources you found info from"],
-  "questions": [
-    {
-      "q": "question text",
-      "modelAnswer": "accurate answer based on what you found",
-      "difficulty": "easy|medium|hard",
-      "source": "where this fact came from"
-    }
-  ]
-}`
-        }]
+Mix difficulty: easy (30%), medium (40%), hard (30%).
+Make questions specific, factual and educational.
+
+Return JSON only (no markdown, no backticks):
+{"sourcesUsed":["Ritual Chain docs","blockchain knowledge"],"questions":[{"q":"question text","modelAnswer":"accurate concise answer","difficulty":"easy|medium|hard","source":"source name"}]}`
+          }
+        ]
       })
     });
 
     const genData = await genResponse.json();
-
-    // Extract text from potentially multi-block response
-    const allText = (genData.content || [])
-      .filter(b => b.type === "text")
-      .map(b => b.text)
-      .join("\n");
+    if (genData.error) throw new Error(genData.error.message);
+    const allText = genData.choices[0].message.content;
 
     status.innerHTML = '<div class="status status-info"><span class="spinner"></span>Step 3: Processing ' + count + ' questions...</div>';
 
@@ -1620,26 +1649,24 @@ Return JSON only (no markdown):
     // Fallback: generate from Claude's training knowledge
     status.innerHTML = '<div class="status status-warning"><span class="spinner"></span>Web search unavailable — using AI knowledge base...</div>';
     try {
-      const fallback = await fetch("https://api.anthropic.com/v1/messages", {
+      const fallback = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "anthropic-dangerous-direct-browser-calls": "true"
+          "Authorization": "Bearer " + OPENAI_KEY
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6",
+          model: "gpt-4o-mini",
           max_tokens: 3000,
-          messages: [{
-            role: "user",
-            content: `Generate ${count} quiz questions about "${topicLabel}" for a blockchain quiz. Include easy, medium and hard questions. Base questions on accurate technical knowledge.
-
-Return JSON only:
-{"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}`
-          }]
+          messages: [
+            { role: "system", content: "You are a blockchain quiz creator. Return only valid JSON." },
+            { role: "user", content: `Generate ${count} quiz questions about "${topicLabel}". Mix easy/medium/hard. Return JSON only: {"questions":[{"q":"question","modelAnswer":"answer","difficulty":"easy|medium|hard"}]}` }
+          ]
         })
       });
       const fd = await fallback.json();
-      const ft = fd.content[0].text.replace(/\`\`\`json|\`\`\`/g,"").trim();
+      if (fd.error) throw new Error(fd.error.message);
+      const ft = fd.choices[0].message.content.replace(/\`\`\`json|\`\`\`/g,"").trim();
       const fr = JSON.parse(ft);
       fr.questions.forEach(q => { qRoomData.questions.push({q:q.q,modelAnswer:q.modelAnswer,difficulty:q.difficulty}); });
       saveR(qRoomData);
