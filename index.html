@@ -8,14 +8,28 @@
 // ── QUIZ ARENA ─────────────────────────────────────────────────────
 // OpenAI key handled server-side
 function checkOpenAIKey() {} // no-op
+
+// ── QuizArena On-Chain Contract ──────────────────────────────────────
+const QUIZ_ADDRESS = "0x144b573f09928B95EBD7e25622747c2104cc8E4E";
+const QUIZ_ABI = [{"inputs": [{"name": "title", "type": "string"}, {"name": "category", "type": "string"}], "name": "createRoom", "outputs": [{"name": "roomId", "type": "uint256"}], "stateMutability": "payable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}, {"name": "text", "type": "string"}, {"name": "optA", "type": "string"}, {"name": "optB", "type": "string"}, {"name": "optC", "type": "string"}, {"name": "optD", "type": "string"}, {"name": "correct", "type": "string"}, {"name": "explanation", "type": "string"}], "name": "addQuestion", "outputs": [], "stateMutability": "nonpayable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}], "name": "joinRoom", "outputs": [], "stateMutability": "nonpayable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}, {"name": "questionIndex", "type": "uint256"}], "name": "startRound", "outputs": [], "stateMutability": "nonpayable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}, {"name": "questionIndex", "type": "uint256"}, {"name": "commitment", "type": "bytes32"}], "name": "commitAnswer", "outputs": [], "stateMutability": "nonpayable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}, {"name": "questionIndex", "type": "uint256"}, {"name": "answer", "type": "string"}, {"name": "salt", "type": "bytes32"}], "name": "revealAnswer", "outputs": [], "stateMutability": "nonpayable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}, {"name": "questionIndex", "type": "uint256"}], "name": "scoreRound", "outputs": [], "stateMutability": "nonpayable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}], "name": "finalizeRoom", "outputs": [], "stateMutability": "nonpayable", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}], "name": "getRoom", "outputs": [{"components": [{"name": "host", "type": "address"}, {"name": "title", "type": "string"}, {"name": "category", "type": "string"}, {"name": "prize", "type": "uint256"}, {"name": "questionCount", "type": "uint256"}, {"name": "currentQuestion", "type": "uint256"}, {"name": "questionDeadline", "type": "uint256"}, {"name": "active", "type": "bool"}, {"name": "finished", "type": "bool"}, {"name": "winner", "type": "address"}, {"name": "playerCount", "type": "uint256"}], "type": "tuple"}], "stateMutability": "view", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}, {"name": "qIdx", "type": "uint256"}], "name": "getQuestion", "outputs": [{"name": "text", "type": "string"}, {"name": "optionA", "type": "string"}, {"name": "optionB", "type": "string"}, {"name": "optionC", "type": "string"}, {"name": "optionD", "type": "string"}, {"name": "correctAnswer", "type": "string"}, {"name": "explanation", "type": "string"}, {"name": "active", "type": "bool"}], "stateMutability": "view", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}, {"name": "player", "type": "address"}], "name": "getPlayerScore", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}], "name": "getPlayers", "outputs": [{"name": "", "type": "address[]"}], "stateMutability": "view", "type": "function"}, {"inputs": [{"name": "roomId", "type": "uint256"}], "name": "nextRoomId", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}, {"inputs": [], "name": "nextRoomId", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}, {"inputs": [{"name": "answer", "type": "string"}, {"name": "salt", "type": "bytes32"}, {"name": "player", "type": "address"}, {"name": "roomId", "type": "uint256"}, {"name": "questionIndex", "type": "uint256"}], "name": "computeCommitment", "outputs": [{"name": "", "type": "bytes32"}], "stateMutability": "pure", "type": "function"}, {"anonymous": false, "inputs": [{"indexed": true, "name": "roomId", "type": "uint256"}, {"indexed": true, "name": "host", "type": "address"}, {"name": "title", "type": "string"}, {"name": "prize", "type": "uint256"}], "name": "RoomCreated", "type": "event"}, {"anonymous": false, "inputs": [{"indexed": true, "name": "roomId", "type": "uint256"}, {"indexed": true, "name": "player", "type": "address"}], "name": "PlayerJoined", "type": "event"}, {"anonymous": false, "inputs": [{"indexed": true, "name": "roomId", "type": "uint256"}, {"name": "questionIndex", "type": "uint256"}, {"name": "deadline", "type": "uint256"}], "name": "RoundStarted", "type": "event"}, {"anonymous": false, "inputs": [{"indexed": true, "name": "roomId", "type": "uint256"}, {"name": "questionIndex", "type": "uint256"}], "name": "RoundScored", "type": "event"}, {"anonymous": false, "inputs": [{"indexed": true, "name": "roomId", "type": "uint256"}, {"indexed": true, "name": "winner", "type": "address"}, {"name": "prize", "type": "uint256"}], "name": "WinnerPaid", "type": "event"}];
+let quizContract = null;
+
+async function initQuizContract() {
+  if (!signer) return;
+  quizContract = new ethers.Contract(QUIZ_ADDRESS, QUIZ_ABI, signer);
+}
 // ── QUIZ ARENA ─────────────────────────────────────────────────────
 let qRole=null, qRoomCode=null, qRoomData=null;
 let hPollInt=null, pPollInt=null, pTimerInt=null;
 let pName="", pScore=0, qIdx=0, pAnswered=false, pTimerSecs=30;
 
-const getRK = c => "QR_"+c.toUpperCase();
-const saveR = d => localStorage.setItem(getRK(d.code), JSON.stringify(d));
-const loadR = c => JSON.parse(localStorage.getItem(getRK(c))||"null");
+// On-chain room helpers
+const getRK = c => "QR_"+c.toUpperCase(); // keep for local UI state only
+const saveLocalR = d => localStorage.setItem(getRK(d.code||d.roomId), JSON.stringify(d));
+const loadLocalR = c => JSON.parse(localStorage.getItem(getRK(c))||"null");
+// Backwards compat
+const saveR = saveLocalR;
+const loadR = loadLocalR;
 
 function selectRole(r) {
   qRole = r;
@@ -56,15 +70,28 @@ function createQuizRoom() {
   },1500);
 }
 
-function addQ() {
+async function addQ() {
   const q=document.getElementById("newQ").value.trim();
   const a=document.getElementById("newA").value.trim();
   if(!q){alert("Enter a question!");return;}
-  qRoomData.questions.push({q,modelAnswer:a});
-  saveR(qRoomData);
-  document.getElementById("newQ").value="";
-  document.getElementById("newA").value="";
-  renderHQList();
+  // For manually added questions without options, use placeholders
+  document.getElementById("newQ").disabled=true;
+  try {
+    const tx = await quizContract.addQuestion(
+      qRoomCode, q,
+      "A. True", "B. False", "C. Maybe", "D. None of the above",
+      "A", a || "See explanation"
+    );
+    await tx.wait();
+    qRoomData.questions.push({q, modelAnswer:a, options:["A. True","B. False","C. Maybe","D. None of the above"], correct:"A"});
+    saveR(qRoomData);
+    document.getElementById("newQ").value="";
+    document.getElementById("newA").value="";
+    renderHQList();
+  } catch(e) {
+    alert("Error: "+(e.reason||e.message));
+  }
+  document.getElementById("newQ").disabled=false;
 }
 
 function renderHQList() { renderHQListUpdated(); } function _renderHQListOld() {
@@ -81,18 +108,26 @@ function renderHLiveAns(){
   el.innerHTML=Object.entries(ans).map(([n,a])=>`<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:8px;margin-bottom:4px;font-size:12px"><strong>${n}</strong>: ${a.text.slice(0,60)}...</div>`).join('')||'<p style="color:var(--muted);font-size:12px">Waiting...</p>';
 }
 
-function hostStartRound(){
-  qRoomData=loadR(qRoomCode);
+async function hostStartRound(){
+  qRoomData=loadR(qRoomCode)||{questions:[]};
   if(!qRoomData.questions.length){alert("Add questions first!");return;}
-  qIdx=qRoomData.currentQ+1;
+  qIdx=(qRoomData.currentQ||0)+1;
   if(qIdx>=qRoomData.questions.length){alert("No more questions!");return;}
-  qRoomData.currentQ=qIdx; qRoomData.state="question"; qRoomData.answers={};
-  saveR(qRoomData);
-  document.getElementById("hCurrQ").textContent=(qIdx+1)+". "+qRoomData.questions[qIdx].q;
-  document.getElementById("hStatus").textContent="Q"+(qIdx+1)+" — players answering...";
-  document.getElementById("hStartBtn").style.display="none";
-  document.getElementById("hScoreBtn").style.display="";
-  document.getElementById("hScoreDisplay").style.display="none";
+
+  document.getElementById("hStatus").textContent="Starting round on-chain...";
+  try {
+    const tx = await quizContract.startRound(qRoomCode, qIdx);
+    await tx.wait();
+    qRoomData.currentQ=qIdx; qRoomData.state="question"; qRoomData.answers={};
+    saveR(qRoomData);
+    document.getElementById("hCurrQ").textContent=(qIdx+1)+". "+qRoomData.questions[qIdx].q;
+    document.getElementById("hStatus").textContent="Q"+(qIdx+1)+" live — players answering...";
+    document.getElementById("hStartBtn").style.display="none";
+    document.getElementById("hScoreBtn").style.display="";
+    document.getElementById("hScoreDisplay").style.display="none";
+  } catch(e) {
+    document.getElementById("hStatus").textContent="Error: "+(e.reason||e.message);
+  }
 }
 
 async function hostShowScores(){
@@ -142,26 +177,153 @@ function hostNext(){
 }
 
 // ── PLAYER ───────────────────────────────────────────────────────────
-function joinRoom(){
+async function joinRoom(){
   pName=document.getElementById("pName").value.trim();
-  const code=document.getElementById("pCode").value.trim().toUpperCase();
-  if(!pName||!code){alert("Enter name and code!");return;}
-  const room=loadR(code);
-  if(!room){document.getElementById("joinStatus").innerHTML='<div class="status status-error">Room not found!</div>';return;}
-  qRoomCode=code; pScore=0; pAnswered=false;
-  room.players[pName]=0; saveR(room);
-  document.getElementById("pQuizTitle").textContent=room.title;
-  document.getElementById("pWaitInfo").textContent="Room: "+code+" — "+room.title;
-  document.getElementById("pJoinCard").style.display="none";
-  document.getElementById("pWaitCard").style.display="";
-  let lastQ=-1;
-  pPollInt=setInterval(()=>{
-    const r=loadR(qRoomCode);
-    if(!r) return;
-    if(r.state==="question"&&r.currentQ!==lastQ){lastQ=r.currentQ;pAnswered=false;showPQuestion(r);}
-    else if(r.state==="scored"){showPScores(r);}
-    else if(r.state==="finished"){clearInterval(pPollInt);showPScores(r);document.getElementById("pWaitNext").textContent="Quiz finished! 🎉";}
-  },1500);
+  const code=document.getElementById("pCode").value.trim().replace("#","");
+  if(!pName||!code){alert("Enter name and room number!");return;}
+  if(!signer){alert("Connect wallet first!");return;}
+  await initQuizContract();
+
+  const st = document.getElementById("joinStatus");
+  st.innerHTML='<div class="status status-info"><span class="spinner"></span>Joining room on Ritual Chain...</div>';
+
+  try {
+    // Verify room exists on-chain
+    const room = await quizContract.getRoom(code);
+    if(!room.active) throw new Error("Room is not active");
+
+    // Join on-chain
+    const tx = await quizContract.joinRoom(code);
+    st.innerHTML='<div class="status status-info"><span class="spinner"></span>Confirming...</div>';
+    await tx.wait();
+
+    qRoomCode=code; pScore=0; pAnswered=false;
+    document.getElementById("pQuizTitle").textContent=room.title;
+    document.getElementById("pWaitInfo").textContent="Room #"+code+" — "+room.title;
+    document.getElementById("pJoinCard").style.display="none";
+    document.getElementById("pWaitCard").style.display="";
+    st.innerHTML='';
+
+    let lastDeadline=0n;
+    pPollInt=setInterval(async ()=>{
+      try {
+        const r = await quizContract.getRoom(qRoomCode);
+        const n = Number(r.playerCount);
+        document.getElementById("pWaitInfo").textContent="Room #"+qRoomCode+" — "+r.title+" ("+n+" players)";
+
+        if(r.finished){
+          clearInterval(pPollInt);
+          document.getElementById("pWaitCard").style.display="none";
+          document.getElementById("pAnswerCard").style.display="none";
+          document.getElementById("pScoreCard").style.display="";
+          const myScore = await quizContract.getPlayerScore(qRoomCode, await signer.getAddress());
+          document.getElementById("pWaitNext").textContent="Quiz finished! 🎉 Your score: "+myScore+" pts. Winner: "+r.winner.slice(0,8)+"...";
+          return;
+        }
+
+        // New round started
+        if(r.questionDeadline > 0n && r.questionDeadline !== lastDeadline) {
+          lastDeadline = r.questionDeadline;
+          pAnswered=false;
+          const q = await quizContract.getQuestion(qRoomCode, Number(r.currentQuestion));
+          showPQuestionOnChain(q, Number(r.currentQuestion), Number(r.questionDeadline), r.title);
+        }
+      } catch(e) { console.log("poll error:", e.message); }
+    },2000);
+
+  } catch(e) {
+    st.innerHTML='<div class="status status-error">Error: '+(e.reason||e.message)+'</div>';
+  }
+}
+
+async function showPQuestionOnChain(q, qIdx, deadline, title) {
+  clearInterval(pTimerInt);
+  document.getElementById("pWaitCard").style.display="none";
+  document.getElementById("pScoreCard").style.display="none";
+  document.getElementById("pAnswerCard").style.display="";
+  document.getElementById("pQN").textContent=qIdx+1;
+  document.getElementById("pQText").textContent=q[0]; // text
+  document.getElementById("pFeedback").innerHTML="";
+  pAnswered=false;
+  currentQSalt = ethers.hexlify(ethers.randomBytes(32));
+  currentQIdx = qIdx;
+
+  // Render options
+  const opts = [q[1],q[2],q[3],q[4]]; // optA,B,C,D
+  const letters=["A","B","C","D"];
+  const colors=["rgba(124,58,237,0.15)","rgba(16,185,129,0.15)","rgba(245,158,11,0.15)","rgba(239,68,68,0.15)"];
+  const borders=["rgba(124,58,237,0.4)","rgba(16,185,129,0.4)","rgba(245,158,11,0.4)","rgba(239,68,68,0.4)"];
+  const optEl=document.getElementById("pOptions");
+  optEl.innerHTML=opts.map((opt,i)=>`
+    <button onclick="selectOptionOnChain('${letters[i]}',this)" style="background:${colors[i]};border:2px solid ${borders[i]};border-radius:12px;padding:16px;text-align:left;cursor:pointer;color:var(--text);font-size:14px;font-weight:500;transition:all 0.15s;width:100%;display:flex;align-items:center;gap:12px;" id="opt_${letters[i]}">
+      <span style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${letters[i]}</span>
+      <span>${opt}</span>
+    </button>`).join('');
+  optEl.style.display="grid";
+  document.getElementById("pAnswerText").style.display="none";
+
+  // Timer based on deadline
+  const nowMs = Date.now();
+  const deadlineMs = Number(deadline); // Ritual uses ms
+  pTimerSecs = Math.max(0, Math.floor((deadlineMs - nowMs) / 1000));
+  document.getElementById("pTimerDisplay").textContent=pTimerSecs;
+  document.getElementById("pTimerBar").style.transition="none";
+  document.getElementById("pTimerBar").style.width="100%";
+  setTimeout(()=>{
+    document.getElementById("pTimerBar").style.transition="width "+pTimerSecs+"s linear";
+    document.getElementById("pTimerBar").style.width="0%";
+  },100);
+  pTimerInt=setInterval(()=>{
+    pTimerSecs--;
+    document.getElementById("pTimerDisplay").textContent=Math.max(0,pTimerSecs);
+    if(pTimerSecs<=0){clearInterval(pTimerInt);if(!pAnswered)autoSubmitP();}
+  },1000);
+}
+
+let currentQSalt = null;
+let currentQIdx = 0;
+
+async function selectOptionOnChain(letter, btnEl) {
+  if(pAnswered) return;
+  document.querySelectorAll("#pOptions button").forEach(b=>{b.style.transform="";b.style.boxShadow="";});
+  btnEl.style.transform="scale(1.02)";
+  btnEl.style.boxShadow="0 0 0 3px white";
+  await submitOnChainAnswer(letter);
+}
+
+async function submitOnChainAnswer(letter) {
+  if(pAnswered) return;
+  pAnswered=true;
+  document.querySelectorAll("#pOptions button").forEach(b=>b.disabled=true);
+  document.getElementById("pFeedback").innerHTML='<div class="status status-info"><span class="spinner"></span>Committing answer on-chain...</div>';
+
+  try {
+    const commitment = await quizContract.computeCommitment(
+      letter, currentQSalt, await signer.getAddress(), qRoomCode, currentQIdx
+    );
+    const tx = await quizContract.commitAnswer(qRoomCode, currentQIdx, commitment);
+    await tx.wait();
+
+    // Save answer locally to reveal later
+    const local = loadR(qRoomCode) || {};
+    local.myAnswers = local.myAnswers || {};
+    local.myAnswers[currentQIdx] = { answer: letter, salt: currentQSalt };
+    saveR({...local, code: qRoomCode, roomId: qRoomCode});
+
+    document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer committed on-chain! Waiting for reveal phase...</div>';
+
+    // Auto-reveal after deadline
+    setTimeout(async () => {
+      try {
+        const revealTx = await quizContract.revealAnswer(qRoomCode, currentQIdx, letter, currentQSalt);
+        await revealTx.wait();
+        document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer revealed! Waiting for host to score...</div>';
+      } catch(e) { console.log("reveal error:", e.message); }
+    }, pTimerSecs * 1000 + 2000);
+
+  } catch(e) {
+    document.getElementById("pFeedback").innerHTML='<div class="status status-error">Error: '+(e.reason||e.message)+'</div>';
+  }
 }
 
 function showPQuestion(room){
@@ -1073,6 +1235,7 @@ async function connectWallet() {
     signer = await provider.getSigner();
     userAddress = await signer.getAddress();
     contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+    quizContract = new ethers.Contract(QUIZ_ADDRESS, QUIZ_ABI, signer);
     ritualWallet = new ethers.Contract(RITUAL_WALLET, ABI, signer);
     document.getElementById("walletSection").innerHTML = `<div id="walletInfo">✓ ${userAddress.slice(0,6)}...${userAddress.slice(-4)}</div>`;
     // Show RitualWallet balance
@@ -1324,9 +1487,13 @@ let qRole=null, qRoomCode=null, qRoomData=null;
 let hPollInt=null, pPollInt=null, pTimerInt=null;
 let pName="", pScore=0, qIdx=0, pAnswered=false, pTimerSecs=30;
 
-const getRK = c => "QR_"+c.toUpperCase();
-const saveR = d => localStorage.setItem(getRK(d.code), JSON.stringify(d));
-const loadR = c => JSON.parse(localStorage.getItem(getRK(c))||"null");
+// On-chain room helpers
+const getRK = c => "QR_"+c.toUpperCase(); // keep for local UI state only
+const saveLocalR = d => localStorage.setItem(getRK(d.code||d.roomId), JSON.stringify(d));
+const loadLocalR = c => JSON.parse(localStorage.getItem(getRK(c))||"null");
+// Backwards compat
+const saveR = saveLocalR;
+const loadR = loadLocalR;
 
 function selectRole(r) {
   qRole = r;
@@ -1367,15 +1534,28 @@ function createQuizRoom() {
   },1500);
 }
 
-function addQ() {
+async function addQ() {
   const q=document.getElementById("newQ").value.trim();
   const a=document.getElementById("newA").value.trim();
   if(!q){alert("Enter a question!");return;}
-  qRoomData.questions.push({q,modelAnswer:a});
-  saveR(qRoomData);
-  document.getElementById("newQ").value="";
-  document.getElementById("newA").value="";
-  renderHQList();
+  // For manually added questions without options, use placeholders
+  document.getElementById("newQ").disabled=true;
+  try {
+    const tx = await quizContract.addQuestion(
+      qRoomCode, q,
+      "A. True", "B. False", "C. Maybe", "D. None of the above",
+      "A", a || "See explanation"
+    );
+    await tx.wait();
+    qRoomData.questions.push({q, modelAnswer:a, options:["A. True","B. False","C. Maybe","D. None of the above"], correct:"A"});
+    saveR(qRoomData);
+    document.getElementById("newQ").value="";
+    document.getElementById("newA").value="";
+    renderHQList();
+  } catch(e) {
+    alert("Error: "+(e.reason||e.message));
+  }
+  document.getElementById("newQ").disabled=false;
 }
 
 function renderHQList() { renderHQListUpdated(); } function _renderHQListOld() {
@@ -1392,18 +1572,26 @@ function renderHLiveAns(){
   el.innerHTML=Object.entries(ans).map(([n,a])=>`<div style="background:rgba(255,255,255,0.03);border-radius:6px;padding:8px;margin-bottom:4px;font-size:12px"><strong>${n}</strong>: ${a.text.slice(0,60)}...</div>`).join('')||'<p style="color:var(--muted);font-size:12px">Waiting...</p>';
 }
 
-function hostStartRound(){
-  qRoomData=loadR(qRoomCode);
+async function hostStartRound(){
+  qRoomData=loadR(qRoomCode)||{questions:[]};
   if(!qRoomData.questions.length){alert("Add questions first!");return;}
-  qIdx=qRoomData.currentQ+1;
+  qIdx=(qRoomData.currentQ||0)+1;
   if(qIdx>=qRoomData.questions.length){alert("No more questions!");return;}
-  qRoomData.currentQ=qIdx; qRoomData.state="question"; qRoomData.answers={};
-  saveR(qRoomData);
-  document.getElementById("hCurrQ").textContent=(qIdx+1)+". "+qRoomData.questions[qIdx].q;
-  document.getElementById("hStatus").textContent="Q"+(qIdx+1)+" — players answering...";
-  document.getElementById("hStartBtn").style.display="none";
-  document.getElementById("hScoreBtn").style.display="";
-  document.getElementById("hScoreDisplay").style.display="none";
+
+  document.getElementById("hStatus").textContent="Starting round on-chain...";
+  try {
+    const tx = await quizContract.startRound(qRoomCode, qIdx);
+    await tx.wait();
+    qRoomData.currentQ=qIdx; qRoomData.state="question"; qRoomData.answers={};
+    saveR(qRoomData);
+    document.getElementById("hCurrQ").textContent=(qIdx+1)+". "+qRoomData.questions[qIdx].q;
+    document.getElementById("hStatus").textContent="Q"+(qIdx+1)+" live — players answering...";
+    document.getElementById("hStartBtn").style.display="none";
+    document.getElementById("hScoreBtn").style.display="";
+    document.getElementById("hScoreDisplay").style.display="none";
+  } catch(e) {
+    document.getElementById("hStatus").textContent="Error: "+(e.reason||e.message);
+  }
 }
 
 async function hostShowScores(){
@@ -1453,26 +1641,153 @@ function hostNext(){
 }
 
 // ── PLAYER ───────────────────────────────────────────────────────────
-function joinRoom(){
+async function joinRoom(){
   pName=document.getElementById("pName").value.trim();
-  const code=document.getElementById("pCode").value.trim().toUpperCase();
-  if(!pName||!code){alert("Enter name and code!");return;}
-  const room=loadR(code);
-  if(!room){document.getElementById("joinStatus").innerHTML='<div class="status status-error">Room not found!</div>';return;}
-  qRoomCode=code; pScore=0; pAnswered=false;
-  room.players[pName]=0; saveR(room);
-  document.getElementById("pQuizTitle").textContent=room.title;
-  document.getElementById("pWaitInfo").textContent="Room: "+code+" — "+room.title;
-  document.getElementById("pJoinCard").style.display="none";
-  document.getElementById("pWaitCard").style.display="";
-  let lastQ=-1;
-  pPollInt=setInterval(()=>{
-    const r=loadR(qRoomCode);
-    if(!r) return;
-    if(r.state==="question"&&r.currentQ!==lastQ){lastQ=r.currentQ;pAnswered=false;showPQuestion(r);}
-    else if(r.state==="scored"){showPScores(r);}
-    else if(r.state==="finished"){clearInterval(pPollInt);showPScores(r);document.getElementById("pWaitNext").textContent="Quiz finished! 🎉";}
-  },1500);
+  const code=document.getElementById("pCode").value.trim().replace("#","");
+  if(!pName||!code){alert("Enter name and room number!");return;}
+  if(!signer){alert("Connect wallet first!");return;}
+  await initQuizContract();
+
+  const st = document.getElementById("joinStatus");
+  st.innerHTML='<div class="status status-info"><span class="spinner"></span>Joining room on Ritual Chain...</div>';
+
+  try {
+    // Verify room exists on-chain
+    const room = await quizContract.getRoom(code);
+    if(!room.active) throw new Error("Room is not active");
+
+    // Join on-chain
+    const tx = await quizContract.joinRoom(code);
+    st.innerHTML='<div class="status status-info"><span class="spinner"></span>Confirming...</div>';
+    await tx.wait();
+
+    qRoomCode=code; pScore=0; pAnswered=false;
+    document.getElementById("pQuizTitle").textContent=room.title;
+    document.getElementById("pWaitInfo").textContent="Room #"+code+" — "+room.title;
+    document.getElementById("pJoinCard").style.display="none";
+    document.getElementById("pWaitCard").style.display="";
+    st.innerHTML='';
+
+    let lastDeadline=0n;
+    pPollInt=setInterval(async ()=>{
+      try {
+        const r = await quizContract.getRoom(qRoomCode);
+        const n = Number(r.playerCount);
+        document.getElementById("pWaitInfo").textContent="Room #"+qRoomCode+" — "+r.title+" ("+n+" players)";
+
+        if(r.finished){
+          clearInterval(pPollInt);
+          document.getElementById("pWaitCard").style.display="none";
+          document.getElementById("pAnswerCard").style.display="none";
+          document.getElementById("pScoreCard").style.display="";
+          const myScore = await quizContract.getPlayerScore(qRoomCode, await signer.getAddress());
+          document.getElementById("pWaitNext").textContent="Quiz finished! 🎉 Your score: "+myScore+" pts. Winner: "+r.winner.slice(0,8)+"...";
+          return;
+        }
+
+        // New round started
+        if(r.questionDeadline > 0n && r.questionDeadline !== lastDeadline) {
+          lastDeadline = r.questionDeadline;
+          pAnswered=false;
+          const q = await quizContract.getQuestion(qRoomCode, Number(r.currentQuestion));
+          showPQuestionOnChain(q, Number(r.currentQuestion), Number(r.questionDeadline), r.title);
+        }
+      } catch(e) { console.log("poll error:", e.message); }
+    },2000);
+
+  } catch(e) {
+    st.innerHTML='<div class="status status-error">Error: '+(e.reason||e.message)+'</div>';
+  }
+}
+
+async function showPQuestionOnChain(q, qIdx, deadline, title) {
+  clearInterval(pTimerInt);
+  document.getElementById("pWaitCard").style.display="none";
+  document.getElementById("pScoreCard").style.display="none";
+  document.getElementById("pAnswerCard").style.display="";
+  document.getElementById("pQN").textContent=qIdx+1;
+  document.getElementById("pQText").textContent=q[0]; // text
+  document.getElementById("pFeedback").innerHTML="";
+  pAnswered=false;
+  currentQSalt = ethers.hexlify(ethers.randomBytes(32));
+  currentQIdx = qIdx;
+
+  // Render options
+  const opts = [q[1],q[2],q[3],q[4]]; // optA,B,C,D
+  const letters=["A","B","C","D"];
+  const colors=["rgba(124,58,237,0.15)","rgba(16,185,129,0.15)","rgba(245,158,11,0.15)","rgba(239,68,68,0.15)"];
+  const borders=["rgba(124,58,237,0.4)","rgba(16,185,129,0.4)","rgba(245,158,11,0.4)","rgba(239,68,68,0.4)"];
+  const optEl=document.getElementById("pOptions");
+  optEl.innerHTML=opts.map((opt,i)=>`
+    <button onclick="selectOptionOnChain('${letters[i]}',this)" style="background:${colors[i]};border:2px solid ${borders[i]};border-radius:12px;padding:16px;text-align:left;cursor:pointer;color:var(--text);font-size:14px;font-weight:500;transition:all 0.15s;width:100%;display:flex;align-items:center;gap:12px;" id="opt_${letters[i]}">
+      <span style="width:32px;height:32px;border-radius:50%;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${letters[i]}</span>
+      <span>${opt}</span>
+    </button>`).join('');
+  optEl.style.display="grid";
+  document.getElementById("pAnswerText").style.display="none";
+
+  // Timer based on deadline
+  const nowMs = Date.now();
+  const deadlineMs = Number(deadline); // Ritual uses ms
+  pTimerSecs = Math.max(0, Math.floor((deadlineMs - nowMs) / 1000));
+  document.getElementById("pTimerDisplay").textContent=pTimerSecs;
+  document.getElementById("pTimerBar").style.transition="none";
+  document.getElementById("pTimerBar").style.width="100%";
+  setTimeout(()=>{
+    document.getElementById("pTimerBar").style.transition="width "+pTimerSecs+"s linear";
+    document.getElementById("pTimerBar").style.width="0%";
+  },100);
+  pTimerInt=setInterval(()=>{
+    pTimerSecs--;
+    document.getElementById("pTimerDisplay").textContent=Math.max(0,pTimerSecs);
+    if(pTimerSecs<=0){clearInterval(pTimerInt);if(!pAnswered)autoSubmitP();}
+  },1000);
+}
+
+let currentQSalt = null;
+let currentQIdx = 0;
+
+async function selectOptionOnChain(letter, btnEl) {
+  if(pAnswered) return;
+  document.querySelectorAll("#pOptions button").forEach(b=>{b.style.transform="";b.style.boxShadow="";});
+  btnEl.style.transform="scale(1.02)";
+  btnEl.style.boxShadow="0 0 0 3px white";
+  await submitOnChainAnswer(letter);
+}
+
+async function submitOnChainAnswer(letter) {
+  if(pAnswered) return;
+  pAnswered=true;
+  document.querySelectorAll("#pOptions button").forEach(b=>b.disabled=true);
+  document.getElementById("pFeedback").innerHTML='<div class="status status-info"><span class="spinner"></span>Committing answer on-chain...</div>';
+
+  try {
+    const commitment = await quizContract.computeCommitment(
+      letter, currentQSalt, await signer.getAddress(), qRoomCode, currentQIdx
+    );
+    const tx = await quizContract.commitAnswer(qRoomCode, currentQIdx, commitment);
+    await tx.wait();
+
+    // Save answer locally to reveal later
+    const local = loadR(qRoomCode) || {};
+    local.myAnswers = local.myAnswers || {};
+    local.myAnswers[currentQIdx] = { answer: letter, salt: currentQSalt };
+    saveR({...local, code: qRoomCode, roomId: qRoomCode});
+
+    document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer committed on-chain! Waiting for reveal phase...</div>';
+
+    // Auto-reveal after deadline
+    setTimeout(async () => {
+      try {
+        const revealTx = await quizContract.revealAnswer(qRoomCode, currentQIdx, letter, currentQSalt);
+        await revealTx.wait();
+        document.getElementById("pFeedback").innerHTML='<div class="status status-success">✅ Answer revealed! Waiting for host to score...</div>';
+      } catch(e) { console.log("reveal error:", e.message); }
+    }, pTimerSecs * 1000 + 2000);
+
+  } catch(e) {
+    document.getElementById("pFeedback").innerHTML='<div class="status status-error">Error: '+(e.reason||e.message)+'</div>';
+  }
 }
 
 function showPQuestion(room){
